@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(cmd /c \"dir /s /b \"\"C:\\\\PROYECTOS OFICIALES - SB\\\\SystemAssembly\\\\FourAssembly\\\\\"\"\")",
+      "Bash(dotnet build *)",
+      "Bash(timeout 3 ./FourAssembly.exe)",
+      "Bash(start FourAssembly.exe)",
+      "Bash(tasklist)",
+      "Bash(timeout 5 dotnet run --no-build)",
+      "PowerShell(Get-WmiObject *)",
+      "PowerShell([System.IO.Ports.SerialPort]::GetPortNames\\(\\))",
+      "PowerShell(Get-PnpDevice *)",
+      "Bash(timeout 10 dotnet run --no-build)",
+      "PowerShell(Stop-Process *)",
+      "Bash(rm -f \"C:/ke/FourPole/app.log\")",
+      "Bash(dotnet run *)"
+    ]
+  }
+}
