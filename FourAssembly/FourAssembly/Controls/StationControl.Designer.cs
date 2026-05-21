@@ -17,6 +17,8 @@ partial class StationControl
     {
         lblStationTitle = new Label();
         lblInstruction = new Label();
+        cmbRecipes = new ComboBox();
+        lblRecipe = new Label();
         txtScanInput = new TextBox();
         lstCables = new ListView();
         lblCableCount = new Label();
@@ -47,10 +49,29 @@ partial class StationControl
         lblInstruction.TabIndex = 1;
         lblInstruction.Text = "Scan the STATION barcode on this PC";
         // 
+        // cmbRecipes
+        // 
+        cmbRecipes.Font = new Font("Segoe UI", 11F);
+        cmbRecipes.Location = new Point(73, 128);
+        cmbRecipes.Name = "cmbRecipes";
+        cmbRecipes.Size = new Size(287, 28);
+        cmbRecipes.TabIndex = 8;
+        cmbRecipes.SelectedIndexChanged += CmbRecipes_SelectedIndexChanged;
+        // 
+        // lblRecipe
+        // 
+        lblRecipe.AutoSize = true;
+        lblRecipe.Font = new Font("Segoe UI", 11F);
+        lblRecipe.Location = new Point(10, 128);
+        lblRecipe.Name = "lblRecipe";
+        lblRecipe.Size = new Size(57, 20);
+        lblRecipe.TabIndex = 7;
+        lblRecipe.Text = "Recipe:";
+        // 
         // txtScanInput
         // 
         txtScanInput.Font = new Font("Segoe UI", 12F);
-        txtScanInput.Location = new Point(10, 128);
+        txtScanInput.Location = new Point(10, 163);
         txtScanInput.Margin = new Padding(3, 2, 3, 2);
         txtScanInput.Name = "txtScanInput";
         txtScanInput.Size = new Size(350, 29);
@@ -61,7 +82,7 @@ partial class StationControl
         // lstCables
         // 
         lstCables.Font = new Font("Segoe UI", 11F);
-        lstCables.Location = new Point(10, 202);
+        lstCables.Location = new Point(10, 237);
         lstCables.Margin = new Padding(3, 2, 3, 2);
         lstCables.Name = "lstCables";
         lstCables.Size = new Size(350, 54);
@@ -74,7 +95,7 @@ partial class StationControl
         // 
         lblCableCount.AutoSize = true;
         lblCableCount.Font = new Font("Segoe UI", 11F);
-        lblCableCount.Location = new Point(10, 262);
+        lblCableCount.Location = new Point(10, 297);
         lblCableCount.Name = "lblCableCount";
         lblCableCount.Size = new Size(68, 20);
         lblCableCount.TabIndex = 4;
@@ -84,7 +105,7 @@ partial class StationControl
         // btnFinalizarCables
         // 
         btnFinalizarCables.Font = new Font("Segoe UI", 11F);
-        btnFinalizarCables.Location = new Point(10, 281);
+        btnFinalizarCables.Location = new Point(10, 316);
         btnFinalizarCables.Margin = new Padding(3, 2, 3, 2);
         btnFinalizarCables.Name = "btnFinalizarCables";
         btnFinalizarCables.Size = new Size(131, 30);
@@ -119,7 +140,7 @@ partial class StationControl
         // btnReset
         // 
         btnReset.Font = new Font("Segoe UI", 11F);
-        btnReset.Location = new Point(10, 165);
+        btnReset.Location = new Point(10, 200);
         btnReset.Margin = new Padding(3, 2, 3, 2);
         btnReset.Name = "btnReset";
         btnReset.Size = new Size(88, 30);
@@ -136,6 +157,8 @@ partial class StationControl
         Controls.Add(lblCableCount);
         Controls.Add(lstCables);
         Controls.Add(btnReset);
+        Controls.Add(cmbRecipes);
+        Controls.Add(lblRecipe);
         Controls.Add(txtScanInput);
         Controls.Add(lblInstruction);
         Controls.Add(lblStationTitle);
@@ -150,6 +173,8 @@ partial class StationControl
 
     private Label lblStationTitle = null!;
     private Label lblInstruction = null!;
+    private Label lblRecipe = null!;
+    private ComboBox cmbRecipes = null!;
     private TextBox txtScanInput = null!;
     private ListView lstCables = null!;
     private Label lblCableCount = null!;

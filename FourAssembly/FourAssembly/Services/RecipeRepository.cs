@@ -5,8 +5,7 @@ using FourAssembly.Models;
 
 public static class RecipeRepository
 {
-    private static readonly string _filePath =
-        Path.Combine(AppContext.BaseDirectory, "recipes.json");
+    private static readonly string _dirPath = @"C:\ke\FourPole\Recipes";
 
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
@@ -23,15 +22,43 @@ public static class RecipeRepository
 
     public static void Load()
     {
-        if (!File.Exists(_filePath)) { _cache = []; return; }
-        var json = File.ReadAllText(_filePath);
-        _cache = JsonSerializer.Deserialize<List<Recipe>>(json, _jsonOptions) ?? [];
+        EnsureDirectoryExists();
+        _cache.Clear();
+
+        var files = Directory.GetFiles(_dirPath, "*.json");
+        foreach (var file in files)
+        {
+            var json = File.ReadAllText(file);
+            var recipe = JsonSerializer.Deserialize<Recipe>(json, _jsonOptions);
+            if (recipe is not null)
+                _cache.Add(recipe);
+        }
     }
 
     public static void Save()
     {
-        var json = JsonSerializer.Serialize(_cache, _jsonOptions);
-        File.WriteAllText(_filePath, json);
+        EnsureDirectoryExists();
+        foreach (var recipe in _cache)
+        {
+            SaveRecipe(recipe);
+        }
+    }
+
+    private static void SaveRecipe(Recipe recipe)
+    {
+        EnsureDirectoryExists();
+        var fileName = GetFileName(recipe.PartNumber);
+        var json = JsonSerializer.Serialize(recipe, _jsonOptions);
+        File.WriteAllText(fileName, json);
+    }
+
+    private static string GetFileName(string partNumber) =>
+        Path.Combine(_dirPath, $"{partNumber}.json");
+
+    private static void EnsureDirectoryExists()
+    {
+        if (!Directory.Exists(_dirPath))
+            Directory.CreateDirectory(_dirPath);
     }
 
     public static void Upsert(Recipe recipe)
@@ -40,13 +67,16 @@ public static class RecipeRepository
             string.Equals(r.PartNumber, recipe.PartNumber, StringComparison.OrdinalIgnoreCase));
         if (existing is not null) _cache.Remove(existing);
         _cache.Add(recipe);
-        Save();
+        SaveRecipe(recipe);
     }
 
     public static void Delete(string partNumber)
     {
         _cache.RemoveAll(r =>
             string.Equals(r.PartNumber, partNumber, StringComparison.OrdinalIgnoreCase));
-        Save();
+
+        var fileName = GetFileName(partNumber);
+        if (File.Exists(fileName))
+            File.Delete(fileName);
     }
 }
