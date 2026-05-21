@@ -30,11 +30,21 @@ public partial class StationControl : UserControl
     {
         InitializeComponent();
         WireEvents();
+        LoadRecipesCombo();
     }
 
     private void WireEvents()
     {
         txtScanInput.KeyDown += TxtScanInput_KeyDown;
+    }
+
+    private void LoadRecipesCombo()
+    {
+        cmbRecipes.DataSource = null;
+        cmbRecipes.DataSource = RecipeRepository.GetAll()
+            .Select(r => r.PartNumber)
+            .ToList();
+        cmbRecipes.SelectedIndex = -1;
     }
 
     private void TxtScanInput_KeyDown(object? sender, KeyEventArgs e)
@@ -44,6 +54,21 @@ public partial class StationControl : UserControl
             e.SuppressKeyPress = true;
             SubmitScan(txtScanInput.Text);
             txtScanInput.Clear();
+        }
+    }
+
+    private void CmbRecipes_SelectedIndexChanged(object? sender, EventArgs e)
+    {
+        if (cmbRecipes.SelectedItem is string partNumber && _state == StationState.SCAN_PART)
+        {
+            var recipe = RecipeRepository.FindByPartNumber(partNumber);
+            if (recipe is not null)
+            {
+                _recipe = recipe;
+                _itemIndex = 0;
+                ShowSuccess($"Recipe loaded: {recipe.PartNumber}");
+                TransitionTo(StationState.SCAN_MATERIALS);
+            }
         }
     }
 
@@ -236,6 +261,8 @@ public partial class StationControl : UserControl
         _cablesScanned.Clear();
         lstCables?.Items.Clear();
         if (lblCableCount != null) lblCableCount.Text = "Cables: 0";
+        cmbRecipes.SelectedIndex = -1;
+        LoadRecipesCombo();
         UpdatePromptUI();
         txtScanInput.Focus();
     }
