@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="System.IO.Ports" Version="8.0.0" />
+    <PackageReference Include="EasyModbus" Version="4.4.0" />
   </ItemGroup>
 
 </Project>
