@@ -9,7 +9,7 @@ public partial class RecipeEditorForm : Form
     private Recipe? _editing;
     private List<Material> _currentMaterials = [];
     private List<Tool> _currentTools = [];
-    private Dictionary<int, StationPanel> _stationPanels = [];
+    private Dictionary<int, RecipeStationPanel> _stationPanels = [];
     private List<TextBox> _bgTextboxes = [];
     private int _selectedBGCount = 0;
 
@@ -130,7 +130,7 @@ public partial class RecipeEditorForm : Form
                 ? _editing.Stations[stationKey]
                 : new StationConfig { Name = stationNum == 4 ? "EOL" : $"Station {stationNum:D2}" };
 
-            var panel = new StationPanel(stationNum, stationConfig, isFirstStation: i == 0);
+            var panel = new RecipeStationPanel(stationNum, stationConfig, isFirstStation: i == 0);
             panel.Location = new Point(10, yPos);
             stationPanelsContainer.Controls.Add(panel);
             _stationPanels[stationNum] = panel;
@@ -297,14 +297,14 @@ public partial class RecipeEditorForm : Form
     }
 }
 
-public class StationPanel : Panel
+public class RecipeStationPanel : Panel
 {
     private int _stationNum;
     private bool _isFirstStation;
     private TextBox txtHousing = null!;
     private CheckBox chkHousingEnable = null!;
 
-    public StationPanel(int stationNum, StationConfig config, bool isFirstStation = false)
+    public RecipeStationPanel(int stationNum, StationConfig config, bool isFirstStation = false)
     {
         _stationNum = stationNum;
         _isFirstStation = isFirstStation;

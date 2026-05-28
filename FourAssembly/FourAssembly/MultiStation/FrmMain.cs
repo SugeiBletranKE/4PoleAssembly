@@ -1,88 +1,62 @@
 namespace FourAssembly.MultiStation;
 
 using FourAssembly.Forms;
+using FourAssembly.Models;
 using FourAssembly.MultiStation.Controls;
 using FourAssembly.MultiStation.Models;
 using FourAssembly.MultiStation.Services;
+using FourAssembly.Services;
 
-public class FrmMain : Form
+public partial class FrmMain : Form
 {
-    private readonly MultiAppSettings _settings;
+    private enum ScanState { Idle, Station, BG, Material, Tool, Ready }
+
+    private readonly AppSettings _settings;
     private readonly PlcService _plc;
     private readonly List<FrmStation> _openStations = [];
     private Controls.StationPanel? _station1Panel;
 
-    public FrmMain(MultiAppSettings settings, PlcService plc)
+    private ScanState _scanState = ScanState.Idle;
+    private Recipe? _currentRecipe;
+    private string _scannedStation = "";
+    private StationConfig? _scannedStationConfig;
+    private int _materialIndex = 0;
+    private int _toolIndex = 0;
+    public FrmMain(AppSettings settings, PlcService plc)
     {
         _settings = settings;
         _plc = plc;
 
-        this.Text = "FourAssembly - Multi-Station Control";
-        this.ClientSize = new Size(1200, 700);
-        this.BackColor = Color.White;
+        InitializeComponent();
 
-        SetupUI();
+        if (_settings.Stations.Count >= 3)
+        {
+            CognexService.Initialize(
+                _settings.Stations[0].ComPort,
+                _settings.Stations[1].ComPort,
+                _settings.Stations[2].ComPort);
+        }
+
+        SetupStationPanel();
+        LoadPartNumbers();
+        OpenStations();
+        _txtScanInput.KeyDown += _txtScanInput_KeyDown;
         this.FormClosing += FrmMain_FormClosing;
     }
 
-    private void SetupUI()
+    private void SetupStationPanel()
     {
-        // Menu panel (60px top)
-        var menuPanel = new Panel
-        {
-            Dock = DockStyle.Top,
-            Height = 60,
-            BackColor = Color.FromArgb(40, 40, 40)
-        };
-
-        var btnEstaciones = new Button
-        {
-            Text = "Estaciones",
-            Location = new Point(10, 10),
-            Size = new Size(120, 40),
-            BackColor = Color.FromArgb(60, 60, 60),
-            ForeColor = Color.White
-        };
-        btnEstaciones.Click += (s, e) => OpenStations();
-        menuPanel.Controls.Add(btnEstaciones);
-
-        var btnRecipeEditor = new Button
-        {
-            Text = "Editor Recetas",
-            Location = new Point(140, 10),
-            Size = new Size(120, 40),
-            BackColor = Color.FromArgb(60, 60, 60),
-            ForeColor = Color.White
-        };
-        btnRecipeEditor.Click += (s, e) => ShowRecipeEditor();
-        menuPanel.Controls.Add(btnRecipeEditor);
-
-        var btnCognex = new Button
-        {
-            Text = "Cognex Debug",
-            Location = new Point(270, 10),
-            Size = new Size(120, 40),
-            BackColor = Color.FromArgb(60, 60, 60),
-            ForeColor = Color.White
-        };
-        btnCognex.Click += (s, e) => ShowCognexDebug();
-        menuPanel.Controls.Add(btnCognex);
-
-        var btnSettings = new Button
-        {
-            Text = "Settings",
-            Location = new Point(400, 10),
-            Size = new Size(120, 40),
-            BackColor = Color.FromArgb(60, 60, 60),
-            ForeColor = Color.White
-        };
-        btnSettings.Click += (s, e) => MessageBox.Show("Settings coming soon");
-        menuPanel.Controls.Add(btnSettings);
-
-        this.Controls.Add(menuPanel);
-
         // Station 1 panel (fill remaining space)
-        _station1Panel = new Controls.StationPanel(_settings.Stations[0], _plc)
+        var stationConfig = new StationSettings
+        {
+            StationNumber = _settings.Stations[0].StationNumber,
+            Name = _settings.Stations[0].Name,
+            ComPort = _settings.Stations[0].ComPort,
+            MonitorIndex = _settings.Stations[0].MonitorIndex,
+            PlcStartCoil = _settings.Stations[0].PlcStartCoil,
+            PlcCounterRegister = _settings.Stations[0].PlcCounterRegister
+        };
+        _station1Panel = new Controls.StationPanel(stationConfig, _plc)
         {
             Dock = DockStyle.Fill
         };
@@ -95,7 +69,16 @@ public class FrmMain : Form
 
         for (int i = 1; i < _settings.Stations.Count; i++)
         {
-            var station = _settings.Stations[i];
+            var appStation = _settings.Stations[i];
+            var station = new StationSettings
+            {
+                StationNumber = appStation.StationNumber,
+                Name = appStation.Name,
+                ComPort = appStation.ComPort,
+                MonitorIndex = appStation.MonitorIndex,
+                PlcStartCoil = appStation.PlcStartCoil,
+                PlcCounterRegister = appStation.PlcCounterRegister
+            };
 
             // Check if station is already open
             var existingForm = _openStations.FirstOrDefault(f =>
@@ -152,5 +135,217 @@ public class FrmMain : Form
         }
 
         _station1Panel?.StopCognex();
+    }
+
+    private void btnEstaciones_Click(object sender, EventArgs e)
+    {
+        OpenStations();
+    }
+
+    private void btnRecipeEditor_Click(object sender, EventArgs e)
+    {
+        ShowRecipeEditor();
+    }
+
+    private void btnCognex_Click(object sender, EventArgs e)
+    {
+        ShowCognexDebug();
+    }
+
+    private void btnSettings_Click(object sender, EventArgs e)
+    {
+
+    }
+
+    private void LoadPartNumbers()
+    {
+        var partNumbers = RecipeRepository.GetAll()
+            .Select(r => r.PartNumber)
+            .OrderBy(pn => pn)
+            .ToList();
+
+        cmbVariante.DataSource = partNumbers;
+    }
+
+    private void cmbVariante_SelectedIndexChanged(object sender, EventArgs e)
+    {
+        if (cmbVariante.SelectedItem is string partNumber)
+        {
+            var recipe = RecipeRepository.FindByPartNumber(partNumber);
+            if (recipe != null)
+            {
+                _currentRecipe = recipe;
+                DisplayRecipeInfo(recipe);
+                ResetScan();
+            }
+        }
+    }
+
+    private void DisplayRecipeInfo(Recipe recipe)
+    {
+        if (_station1Panel != null)
+        {
+            _station1Panel.SetRecipeInfo(recipe);
+        }
+
+        foreach (var station in _openStations)
+        {
+            if (!station.IsDisposed)
+            {
+                station.SetRecipeInfo(recipe);
+            }
+        }
+    }
+
+    private void ResetScan()
+    {
+        _scanState = ScanState.Station;
+        _scannedStation = "";
+        _scannedStationConfig = null;
+        _materialIndex = 0;
+        _toolIndex = 0;
+        _txtScanInput.Clear();
+        _txtScanInput.Focus();
+        UpdateScanInstruction();
+    }
+
+    private void _txtScanInput_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.KeyCode == Keys.Return)
+        {
+            e.Handled = true;
+            SubmitScan();
+        }
+    }
+
+    private void SubmitScan()
+    {
+        var barcode = _txtScanInput.Text.Trim();
+        _txtScanInput.Clear();
+        _txtScanInput.Focus();
+
+        if (string.IsNullOrEmpty(barcode) || _currentRecipe == null)
+            return;
+
+        switch (_scanState)
+        {
+            case ScanState.Station:
+                ValidateStation(barcode);
+                break;
+            case ScanState.BG:
+                ValidateBG(barcode);
+                break;
+            case ScanState.Material:
+                ValidateMaterial(barcode);
+                break;
+            case ScanState.Tool:
+                ValidateTool(barcode);
+                break;
+        }
+    }
+
+    private void ValidateStation(string barcode)
+    {
+        if (_currentRecipe.Stations.TryGetValue(barcode, out var stationConfig))
+        {
+            _scannedStation = barcode;
+            _scannedStationConfig = stationConfig;
+            _scanState = ScanState.BG;
+            UpdateScanInstruction();
+        }
+        else
+        {
+            ShowError("Estación no válida");
+        }
+    }
+
+    private void ValidateBG(string barcode)
+    {
+        if (_scannedStationConfig?.BG == barcode)
+        {
+            _scanState = ScanState.Material;
+            _materialIndex = 0;
+            UpdateScanInstruction();
+        }
+        else
+        {
+            ShowError($"BG incorrecto. Esperado: {_scannedStationConfig?.BG}");
+        }
+    }
+
+    private void ValidateMaterial(string barcode)
+    {
+        if (_materialIndex < _currentRecipe.Materials.Count)
+        {
+            if (_currentRecipe.Materials[_materialIndex].Barcode == barcode)
+            {
+                _materialIndex++;
+                if (_materialIndex >= _currentRecipe.Materials.Count)
+                {
+                    _scanState = ScanState.Tool;
+                    _toolIndex = 0;
+                }
+                UpdateScanInstruction();
+            }
+            else
+            {
+                ShowError($"Material incorrecto. Esperado: {_currentRecipe.Materials[_materialIndex].Name}");
+            }
+        }
+    }
+
+    private void ValidateTool(string barcode)
+    {
+        if (_toolIndex < _currentRecipe.Tools.Count)
+        {
+            if (_currentRecipe.Tools[_toolIndex].Barcode == barcode)
+            {
+                _toolIndex++;
+                if (_toolIndex >= _currentRecipe.Tools.Count)
+                {
+                    _scanState = ScanState.Ready;
+                }
+                UpdateScanInstruction();
+            }
+            else
+            {
+                ShowError($"Herramienta incorrecta. Esperada: {_currentRecipe.Tools[_toolIndex].Name}");
+            }
+        }
+    }
+
+    private void UpdateScanInstruction()
+    {
+        switch (_scanState)
+        {
+            case ScanState.Station:
+                lblInfo.Text = "Escanear Estación";
+                lblInfo.ForeColor = Color.Black;
+                break;
+            case ScanState.BG:
+                lblInfo.Text = $"Escanear BG: {_scannedStationConfig?.BG}";
+                lblInfo.ForeColor = Color.Black;
+                break;
+            case ScanState.Material:
+                var matCount = $"{_materialIndex + 1}/{_currentRecipe?.Materials.Count}";
+                lblInfo.Text = $"Escanear Material {matCount}";
+                lblInfo.ForeColor = Color.Black;
+                break;
+            case ScanState.Tool:
+                var toolCount = $"{_toolIndex + 1}/{_currentRecipe?.Tools.Count}";
+                lblInfo.Text = $"Escanear Herramienta {toolCount}";
+                lblInfo.ForeColor = Color.Black;
+                break;
+            case ScanState.Ready:
+                lblInfo.Text = "✓ ¡Listo! Puedes abrir las estaciones";
+                lblInfo.ForeColor = Color.Green;
+                break;
+        }
+    }
+
+    private void ShowError(string message)
+    {
+        lblInfo.Text = $"✗ {message}";
+        lblInfo.ForeColor = Color.Red;
     }
 }

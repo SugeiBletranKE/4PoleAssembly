@@ -1,5 +1,4 @@
 namespace FourAssembly.Forms;
-
 using FourAssembly.Services;
 
 public partial class CognexDiagnosticsForm : Form

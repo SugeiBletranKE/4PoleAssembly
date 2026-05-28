@@ -12,7 +12,7 @@ namespace FourAssembly
             ApplicationConfiguration.Initialize();
 
             // Load settings and initialize services
-            var settings = MultiSettingsManager.Load();
+            var settings = SettingsManager.Load();
             RecipeRepository.Load();
             LogService.Initialize();
 

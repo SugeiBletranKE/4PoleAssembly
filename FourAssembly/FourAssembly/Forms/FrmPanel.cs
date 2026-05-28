@@ -6,7 +6,6 @@ using FourAssembly.Services;
 public partial class FrmPanel : Form
 {
     private StationControl[]? _stationControls;
-    private RecipeEditorForm? _recipeEditor;
 
     public FrmPanel()
     {
@@ -17,8 +16,10 @@ public partial class FrmPanel : Form
 
         // Load Cognex settings and initialize
         var settings = SettingsManager.Load();
-        LogService.Log($"Settings loaded: Station1={settings.Station1}, Station2={settings.Station2}, Station3={settings.Station3}");
-        CognexService.Initialize(settings.Station1, settings.Station2, settings.Station3);
+        var stations = string.Join(", ", settings.Stations.Select(s => s.ComPort));
+        LogService.Log($"Settings loaded: {stations}");
+        var ports = settings.Stations.Select(s => s.ComPort).ToArray();
+        CognexService.Initialize(ports[0], ports[1], ports[2]);
 
         ShowStations();
         LogService.Log("FrmPanel ready");

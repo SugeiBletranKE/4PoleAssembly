@@ -5,13 +5,12 @@ using FourAssembly.Services;
 using FourAssembly.MultiStation.Models;
 using FourAssembly.MultiStation.Services;
 
-public class StationPanel : UserControl
+public partial class StationPanel : UserControl
 {
     private enum StationState { SCAN_STATION, SCAN_PART, SCAN_MATERIALS, SCAN_TOOLS, SCAN_CABLES, DONE }
 
     private readonly StationSettings _config;
     private readonly PlcService _plc;
-    private StationCognexReader _cognex = null!;
 
     private StationState _state = StationState.SCAN_STATION;
     private Recipe? _currentRecipe;
@@ -20,65 +19,14 @@ public class StationPanel : UserControl
     private List<string> _scannedCables = [];
     private int _cableCount = 0;
 
-    // UI Controls
-    private Label _lblStation = null!;
-    private Label _lblInstruction = null!;
-    private TextBox _txtScanInput = null!;
-    private ListView _lstCables = null!;
-    private Label _lblCableCount = null!;
-    private Button _btnFinalize = null!;
-    private Button _btnReset = null!;
-    private Label _lblStatus = null!;
-
     public StationPanel(StationSettings config, PlcService plc)
     {
         _config = config;
         _plc = plc;
-        _cognex = new StationCognexReader(config.ComPort);
 
-        this.BackColor = Color.White;
-        SetupUI();
+        InitializeComponent();
+        _lblStation.Text = _config.Name;
         Reset();
-    }
-
-    private void SetupUI()
-    {
-        // Header
-        _lblStation = new Label { Text = _config.Name, Font = new Font("Segoe UI", 16, FontStyle.Bold), Location = new Point(20, 20), AutoSize = true };
-        this.Controls.Add(_lblStation);
-
-        _lblInstruction = new Label { Location = new Point(20, 60), AutoSize = true, MaximumSize = new Size(850, 0) };
-        this.Controls.Add(_lblInstruction);
-
-        // Scan input
-        var lblInput = new Label { Text = "Scan:", Location = new Point(20, 110), AutoSize = true };
-        _txtScanInput = new TextBox { Location = new Point(80, 108), Size = new Size(300, 24), Font = new Font("Consolas", 11) };
-        _txtScanInput.KeyDown += (s, e) => { if (e.KeyCode == Keys.Return) SubmitScan(); };
-        this.Controls.Add(lblInput);
-        this.Controls.Add(_txtScanInput);
-
-        // Cables ListView
-        var lblCables = new Label { Text = "Scanned Cables:", Location = new Point(20, 150), AutoSize = true };
-        _lstCables = new ListView { Location = new Point(20, 170), Size = new Size(450, 350), View = View.List };
-        _cableCount = 0;
-        this.Controls.Add(lblCables);
-        this.Controls.Add(_lstCables);
-
-        _lblCableCount = new Label { Text = "Count: 0", Location = new Point(500, 170), AutoSize = true };
-        this.Controls.Add(_lblCableCount);
-
-        // Buttons
-        _btnFinalize = new Button { Text = "Finalize", Location = new Point(500, 250), Size = new Size(100, 40), BackColor = Color.LimeGreen };
-        _btnFinalize.Click += (s, e) => FinalizeStationCycle();
-        this.Controls.Add(_btnFinalize);
-
-        _btnReset = new Button { Text = "Reset", Location = new Point(620, 250), Size = new Size(100, 40) };
-        _btnReset.Click += (s, e) => Reset();
-        this.Controls.Add(_btnReset);
-
-        // Status
-        _lblStatus = new Label { Location = new Point(20, 540), AutoSize = true, ForeColor = Color.Blue };
-        this.Controls.Add(_lblStatus);
     }
 
     private void SubmitScan()
@@ -218,12 +166,63 @@ public class StationPanel : UserControl
         _txtScanInput.Focus();
         UpdateUI();
 
-        if (!_cognex.Start())
-            MessageBox.Show($"Warning: Could not open COM {_config.ComPort}");
+        CognexService.CableReceived += OnCognexDataReceived;
+    }
+
+    private void OnCognexDataReceived(int stationNum, string data)
+    {
+        if (stationNum == _config.StationNumber)
+        {
+            BeginInvoke(() =>
+            {
+                if (_state == StationState.SCAN_CABLES)
+                {
+                    if (!_scannedCables.Contains(data))
+                    {
+                        _scannedCables.Add(data);
+                        _lstCables.Items.Add(data);
+                        _cableCount++;
+                        _lblCableCount.Text = $"Count: {_cableCount}";
+                    }
+                }
+            });
+        }
     }
 
     public void StopCognex()
     {
-        _cognex?.Stop();
+        CognexService.CableReceived -= OnCognexDataReceived;
+    }
+
+    private void _btnFinalize_Click(object sender, EventArgs e)
+    {
+        FinalizeStationCycle();
+    }
+
+    private void _btnReset_Click(object sender, EventArgs e)
+    {
+
+    }
+
+    private void _txtScanInput_TextChanged(object sender, EventArgs e)
+    {
+
+    }
+
+    private void _txtScanInput_KeyDown(object sender, KeyEventArgs e)
+    {
+        SubmitScan();
+    }
+
+    public void SetRecipeInfo(Recipe recipe)
+    {
+        if (recipe?.Stations.TryGetValue(_config.StationNumber.ToString(), out var stationConfig) == true)
+        {
+            lblBG.Text = stationConfig.BG;
+        }
+        else
+        {
+            lblBG.Text = "--";
+        }
     }
 }
