@@ -225,4 +225,17 @@ public partial class StationPanel : UserControl
             lblBG.Text = "--";
         }
     }
+
+    public void StartCableScan()
+    {
+        _state = StationState.SCAN_CABLES;
+        _scannedCables.Clear();
+        _cableCount = 0;
+        _lstCables.Items.Clear();
+        _lblCableCount.Text = "Count: 0";
+        UpdateUI();
+
+        CognexService.CableReceived -= OnCognexDataReceived;
+        CognexService.CableReceived += OnCognexDataReceived;
+    }
 }

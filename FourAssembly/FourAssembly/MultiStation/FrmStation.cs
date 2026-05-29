@@ -30,4 +30,9 @@ public partial class FrmStation : Form
     {
         _stationPanel?.SetRecipeInfo(recipe);
     }
+
+    public void StartCableScan()
+    {
+        _stationPanel?.StartCableScan();
+    }
 }

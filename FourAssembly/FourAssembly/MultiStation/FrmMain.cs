@@ -6,6 +6,7 @@ using FourAssembly.MultiStation.Controls;
 using FourAssembly.MultiStation.Models;
 using FourAssembly.MultiStation.Services;
 using FourAssembly.Services;
+using System.Runtime.InteropServices;
 
 public partial class FrmMain : Form
 {
@@ -337,15 +338,52 @@ public partial class FrmMain : Form
                 lblInfo.ForeColor = Color.Black;
                 break;
             case ScanState.Ready:
-                lblInfo.Text = "✓ ¡Listo! Puedes abrir las estaciones";
+                lblInfo.Text = "¡Listo! Puedes abrir las estaciones";
                 lblInfo.ForeColor = Color.Green;
+                EnableCognexScan();
                 break;
+        }
+    }
+
+    private void EnableCognexScan()
+    {
+        _station1Panel?.StartCableScan();
+        foreach (var station in _openStations)
+        {
+            if (!station.IsDisposed)
+            {
+                station.StartCableScan();
+            }
         }
     }
 
     private void ShowError(string message)
     {
-        lblInfo.Text = $"✗ {message}";
+        lblInfo.Text = $"x {message}";
         lblInfo.ForeColor = Color.Red;
     }
+
+    private void button1_Click(object sender, EventArgs e)
+    {
+        this.Close();
+    }
+
+    private void pnMenu_MouseDown(object sender, MouseEventArgs e)
+    {
+        ReleaseCapture();
+        SendMessage(this.Handle, 0x112, 0xf012, 0);
+    }
+    [DllImport("user32.DLL", EntryPoint = "ReleaseCapture")]
+    private extern static void ReleaseCapture();
+    [DllImport("user32.DLL", EntryPoint = "SendMessage")]
+    private extern static void SendMessage(System.IntPtr hwnd, int wmsg, int wparam, int lparam);
+
+    private void btnActive_Click(object sender, EventArgs e)
+    {
+        cmbVariante.Enabled = false;
+        _txtScanInput.Visible = true;
+        _txtScanInput.Focus();
+        ResetScan();
+    }
+
 }

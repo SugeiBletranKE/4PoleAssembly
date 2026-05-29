@@ -22,26 +22,32 @@ namespace FourAssembly.MultiStation
         {
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(FrmMain));
             menuPanel = new Panel();
-            btnEstaciones = new Button();
             btnRecipeEditor = new Button();
+            btnEstaciones = new Button();
             btnCognex = new Button();
             btnSettings = new Button();
-            panel1 = new Panel();
+            pnMenu = new Panel();
             button1 = new Button();
             panel2 = new Panel();
             panel3 = new Panel();
             cmbVariante = new ComboBox();
             label1 = new Label();
+            lblInfo = new Label();
+            _txtScanInput = new TextBox();
+            panel1 = new Panel();
+            btnActive = new Button();
+            panel4 = new Panel();
             menuPanel.SuspendLayout();
-            panel1.SuspendLayout();
+            pnMenu.SuspendLayout();
             panel2.SuspendLayout();
+            panel1.SuspendLayout();
             SuspendLayout();
             // 
             // menuPanel
             // 
             menuPanel.BackColor = Color.FromArgb(20, 55, 100);
-            menuPanel.Controls.Add(btnEstaciones);
             menuPanel.Controls.Add(btnRecipeEditor);
+            menuPanel.Controls.Add(btnEstaciones);
             menuPanel.Controls.Add(btnCognex);
             menuPanel.Controls.Add(btnSettings);
             menuPanel.Dock = DockStyle.Top;
@@ -50,33 +56,33 @@ namespace FourAssembly.MultiStation
             menuPanel.Size = new Size(1200, 44);
             menuPanel.TabIndex = 0;
             // 
+            // btnRecipeEditor
+            // 
+            btnRecipeEditor.BackColor = Color.FromArgb(20, 55, 100);
+            btnRecipeEditor.Dock = DockStyle.Right;
+            btnRecipeEditor.Font = new Font("Segoe UI", 12F);
+            btnRecipeEditor.ForeColor = Color.White;
+            btnRecipeEditor.Location = new Point(861, 0);
+            btnRecipeEditor.Name = "btnRecipeEditor";
+            btnRecipeEditor.Size = new Size(103, 44);
+            btnRecipeEditor.TabIndex = 1;
+            btnRecipeEditor.Text = "Recetas";
+            btnRecipeEditor.UseVisualStyleBackColor = false;
+            btnRecipeEditor.Click += btnRecipeEditor_Click;
+            // 
             // btnEstaciones
             // 
             btnEstaciones.BackColor = Color.FromArgb(20, 55, 100);
             btnEstaciones.Dock = DockStyle.Left;
             btnEstaciones.Font = new Font("Segoe UI", 12F);
             btnEstaciones.ForeColor = Color.White;
-            btnEstaciones.Location = new Point(148, 0);
+            btnEstaciones.Location = new Point(0, 0);
             btnEstaciones.Name = "btnEstaciones";
-            btnEstaciones.Size = new Size(148, 44);
+            btnEstaciones.Size = new Size(183, 44);
             btnEstaciones.TabIndex = 0;
             btnEstaciones.Text = "Estaciones";
             btnEstaciones.UseVisualStyleBackColor = false;
             btnEstaciones.Click += btnEstaciones_Click;
-            // 
-            // btnRecipeEditor
-            // 
-            btnRecipeEditor.BackColor = Color.FromArgb(20, 55, 100);
-            btnRecipeEditor.Dock = DockStyle.Left;
-            btnRecipeEditor.Font = new Font("Segoe UI", 12F);
-            btnRecipeEditor.ForeColor = Color.White;
-            btnRecipeEditor.Location = new Point(0, 0);
-            btnRecipeEditor.Name = "btnRecipeEditor";
-            btnRecipeEditor.Size = new Size(148, 44);
-            btnRecipeEditor.TabIndex = 1;
-            btnRecipeEditor.Text = "Recetas";
-            btnRecipeEditor.UseVisualStyleBackColor = false;
-            btnRecipeEditor.Click += btnRecipeEditor_Click;
             // 
             // btnCognex
             // 
@@ -84,7 +90,7 @@ namespace FourAssembly.MultiStation
             btnCognex.Dock = DockStyle.Right;
             btnCognex.Font = new Font("Segoe UI", 12F);
             btnCognex.ForeColor = Color.White;
-            btnCognex.Location = new Point(904, 0);
+            btnCognex.Location = new Point(964, 0);
             btnCognex.Name = "btnCognex";
             btnCognex.Size = new Size(148, 44);
             btnCognex.TabIndex = 2;
@@ -98,23 +104,24 @@ namespace FourAssembly.MultiStation
             btnSettings.Dock = DockStyle.Right;
             btnSettings.Font = new Font("Segoe UI", 12F, FontStyle.Regular, GraphicsUnit.Point, 0);
             btnSettings.ForeColor = Color.White;
-            btnSettings.Location = new Point(1052, 0);
+            btnSettings.Location = new Point(1112, 0);
             btnSettings.Name = "btnSettings";
-            btnSettings.Size = new Size(148, 44);
+            btnSettings.Size = new Size(88, 44);
             btnSettings.TabIndex = 3;
             btnSettings.Text = "Settings";
             btnSettings.UseVisualStyleBackColor = false;
             btnSettings.Click += btnSettings_Click;
             // 
-            // panel1
+            // pnMenu
             // 
-            panel1.BackColor = Color.FromArgb(20, 55, 100);
-            panel1.Controls.Add(button1);
-            panel1.Dock = DockStyle.Top;
-            panel1.Location = new Point(0, 0);
-            panel1.Name = "panel1";
-            panel1.Size = new Size(1200, 30);
-            panel1.TabIndex = 1;
+            pnMenu.BackColor = Color.FromArgb(20, 55, 100);
+            pnMenu.Controls.Add(button1);
+            pnMenu.Dock = DockStyle.Top;
+            pnMenu.Location = new Point(0, 0);
+            pnMenu.Name = "pnMenu";
+            pnMenu.Size = new Size(1200, 30);
+            pnMenu.TabIndex = 1;
+            pnMenu.MouseDown += pnMenu_MouseDown;
             // 
             // button1
             // 
@@ -127,6 +134,7 @@ namespace FourAssembly.MultiStation
             button1.Size = new Size(48, 30);
             button1.TabIndex = 0;
             button1.UseVisualStyleBackColor = true;
+            button1.Click += button1_Click;
             // 
             // panel2
             // 
@@ -159,7 +167,7 @@ namespace FourAssembly.MultiStation
             cmbVariante.SelectedIndexChanged += cmbVariante_SelectedIndexChanged;
             // 
             // label1
-            //
+            // 
             label1.Dock = DockStyle.Top;
             label1.Font = new Font("Segoe UI", 27.75F, FontStyle.Regular, GraphicsUnit.Point, 0);
             label1.ForeColor = Color.FromArgb(20, 55, 100);
@@ -167,53 +175,85 @@ namespace FourAssembly.MultiStation
             label1.Name = "label1";
             label1.Size = new Size(1200, 83);
             label1.TabIndex = 0;
-            label1.Text = "Seleccionar n�mero de parte";
+            label1.Text = "Seleccionar número de parte";
             label1.TextAlign = ContentAlignment.MiddleCenter;
-            //
+            // 
             // lblInfo
-            //
-            lblInfo = new Label();
+            // 
             lblInfo.Dock = DockStyle.Bottom;
             lblInfo.Font = new Font("Segoe UI", 14F, FontStyle.Bold);
             lblInfo.Location = new Point(0, 600);
             lblInfo.Name = "lblInfo";
             lblInfo.Size = new Size(1200, 100);
             lblInfo.TabIndex = 12;
-            lblInfo.Text = "";
             lblInfo.TextAlign = ContentAlignment.MiddleCenter;
-            //
+            // 
             // _txtScanInput
-            //
-            _txtScanInput = new TextBox();
+            // 
+            _txtScanInput.Font = new Font("Consolas", 12F);
             _txtScanInput.Location = new Point(50, 650);
             _txtScanInput.Name = "_txtScanInput";
-            _txtScanInput.Size = new Size(1100, 30);
-            _txtScanInput.Font = new Font("Consolas", 12F);
+            _txtScanInput.Size = new Size(1100, 26);
             _txtScanInput.TabIndex = 13;
             _txtScanInput.Visible = false;
-            //
+            // 
+            // panel1
+            // 
+            panel1.Controls.Add(btnActive);
+            panel1.Controls.Add(panel4);
+            panel1.Dock = DockStyle.Top;
+            panel1.Location = new Point(0, 224);
+            panel1.Name = "panel1";
+            panel1.Size = new Size(1200, 67);
+            panel1.TabIndex = 14;
+            // 
+            // btnActive
+            // 
+            btnActive.BackColor = Color.FromArgb(221, 236, 255);
+            btnActive.Dock = DockStyle.Right;
+            btnActive.Font = new Font("Candara", 14.25F, FontStyle.Bold, GraphicsUnit.Point, 0);
+            btnActive.ForeColor = Color.FromArgb(20, 55, 100);
+            btnActive.Location = new Point(904, 0);
+            btnActive.Name = "btnActive";
+            btnActive.Size = new Size(208, 67);
+            btnActive.TabIndex = 4;
+            btnActive.Text = "Activar variante";
+            btnActive.UseVisualStyleBackColor = false;
+            btnActive.Click += btnActive_Click;
+            // 
+            // panel4
+            // 
+            panel4.Dock = DockStyle.Right;
+            panel4.Location = new Point(1112, 0);
+            panel4.Name = "panel4";
+            panel4.Size = new Size(88, 67);
+            panel4.TabIndex = 5;
+            // 
             // FrmMain
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.White;
             ClientSize = new Size(1200, 700);
+            Controls.Add(panel1);
             Controls.Add(_txtScanInput);
             Controls.Add(lblInfo);
             Controls.Add(cmbVariante);
             Controls.Add(label1);
             Controls.Add(panel2);
             Controls.Add(menuPanel);
-            Controls.Add(panel1);
+            Controls.Add(pnMenu);
             FormBorderStyle = FormBorderStyle.None;
             Name = "FrmMain";
             Text = "FourAssembly - Multi-Station Control";
             menuPanel.ResumeLayout(false);
-            panel1.ResumeLayout(false);
+            pnMenu.ResumeLayout(false);
             panel2.ResumeLayout(false);
+            panel1.ResumeLayout(false);
             ResumeLayout(false);
+            PerformLayout();
         }
-        private Panel panel1;
+        private Panel pnMenu;
         private Button button1;
         private Panel panel2;
         private Panel panel3;
@@ -221,5 +261,8 @@ namespace FourAssembly.MultiStation
         private Label label1;
         private Label lblInfo;
         private TextBox _txtScanInput;
+        private Panel panel1;
+        private Button btnActive;
+        private Panel panel4;
     }
 }
