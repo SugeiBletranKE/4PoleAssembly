@@ -20,6 +20,14 @@ partial class RecipeEditorForm
         btnNew = new Button();
         lstRecipes = new ListBox();
         scrollPanel = new Panel();
+        pnlConnectorGender = new Panel();
+        rdbConnectorMale = new RadioButton();
+        rdbConnectorFemale = new RadioButton();
+        lblConnectorGender = new Label();
+        rdb02 = new RadioButton();
+        rdb03 = new RadioButton();
+        rdb01 = new RadioButton();
+        label2 = new Label();
         btnReset = new Button();
         btnSave = new Button();
         btnRemoveTool = new Button();
@@ -34,7 +42,6 @@ partial class RecipeEditorForm
         txtMaterialBarcode = new TextBox();
         txtMaterialName = new TextBox();
         lblMaterials = new Label();
-        stationPanelsContainer = new Panel();
         pnlBGInputs = new Panel();
         radBG4 = new RadioButton();
         radBG3 = new RadioButton();
@@ -47,6 +54,7 @@ partial class RecipeEditorForm
         lblPartNumber = new Label();
         pnlLeft.SuspendLayout();
         scrollPanel.SuspendLayout();
+        pnlConnectorGender.SuspendLayout();
         SuspendLayout();
         // 
         // pnlLeft
@@ -57,13 +65,13 @@ partial class RecipeEditorForm
         pnlLeft.Dock = DockStyle.Left;
         pnlLeft.Location = new Point(0, 0);
         pnlLeft.Name = "pnlLeft";
-        pnlLeft.Size = new Size(261, 800);
+        pnlLeft.Size = new Size(261, 629);
         pnlLeft.TabIndex = 0;
         // 
         // btnDelete
         // 
         btnDelete.Font = new Font("Segoe UI", 10F);
-        btnDelete.Location = new Point(170, 720);
+        btnDelete.Location = new Point(170, 587);
         btnDelete.Name = "btnDelete";
         btnDelete.Size = new Size(85, 30);
         btnDelete.TabIndex = 2;
@@ -74,7 +82,7 @@ partial class RecipeEditorForm
         // btnNew
         // 
         btnNew.Font = new Font("Segoe UI", 10F);
-        btnNew.Location = new Point(10, 720);
+        btnNew.Location = new Point(10, 587);
         btnNew.Name = "btnNew";
         btnNew.Size = new Size(85, 30);
         btnNew.TabIndex = 1;
@@ -90,13 +98,18 @@ partial class RecipeEditorForm
         lstRecipes.ItemHeight = 20;
         lstRecipes.Location = new Point(10, 9);
         lstRecipes.Name = "lstRecipes";
-        lstRecipes.Size = new Size(241, 704);
+        lstRecipes.Size = new Size(241, 564);
         lstRecipes.TabIndex = 0;
         lstRecipes.SelectedIndexChanged += LstRecipes_SelectedIndexChanged;
         // 
         // scrollPanel
         // 
         scrollPanel.AutoScroll = true;
+        scrollPanel.Controls.Add(pnlConnectorGender);
+        scrollPanel.Controls.Add(rdb02);
+        scrollPanel.Controls.Add(rdb03);
+        scrollPanel.Controls.Add(rdb01);
+        scrollPanel.Controls.Add(label2);
         scrollPanel.Controls.Add(btnReset);
         scrollPanel.Controls.Add(btnSave);
         scrollPanel.Controls.Add(btnRemoveTool);
@@ -111,7 +124,6 @@ partial class RecipeEditorForm
         scrollPanel.Controls.Add(txtMaterialBarcode);
         scrollPanel.Controls.Add(txtMaterialName);
         scrollPanel.Controls.Add(lblMaterials);
-        scrollPanel.Controls.Add(stationPanelsContainer);
         scrollPanel.Controls.Add(pnlBGInputs);
         scrollPanel.Controls.Add(radBG4);
         scrollPanel.Controls.Add(radBG3);
@@ -125,13 +137,100 @@ partial class RecipeEditorForm
         scrollPanel.Dock = DockStyle.Fill;
         scrollPanel.Location = new Point(261, 0);
         scrollPanel.Name = "scrollPanel";
-        scrollPanel.Size = new Size(839, 800);
+        scrollPanel.Size = new Size(839, 629);
         scrollPanel.TabIndex = 1;
+        // 
+        // pnlConnectorGender
+        // 
+        pnlConnectorGender.Controls.Add(rdbConnectorMale);
+        pnlConnectorGender.Controls.Add(rdbConnectorFemale);
+        pnlConnectorGender.Controls.Add(lblConnectorGender);
+        pnlConnectorGender.Location = new Point(342, 15);
+        pnlConnectorGender.Name = "pnlConnectorGender";
+        pnlConnectorGender.Size = new Size(260, 55);
+        pnlConnectorGender.TabIndex = 27;
+        // 
+        // rdbConnectorMale
+        // 
+        rdbConnectorMale.AutoSize = true;
+        rdbConnectorMale.Font = new Font("Segoe UI", 10F);
+        rdbConnectorMale.Location = new Point(125, 25);
+        rdbConnectorMale.Name = "rdbConnectorMale";
+        rdbConnectorMale.Size = new Size(57, 23);
+        rdbConnectorMale.TabIndex = 2;
+        rdbConnectorMale.Text = "Male";
+        rdbConnectorMale.UseVisualStyleBackColor = true;
+        // 
+        // rdbConnectorFemale
+        // 
+        rdbConnectorFemale.AutoSize = true;
+        rdbConnectorFemale.Checked = true;
+        rdbConnectorFemale.Font = new Font("Segoe UI", 10F);
+        rdbConnectorFemale.Location = new Point(15, 25);
+        rdbConnectorFemale.Name = "rdbConnectorFemale";
+        rdbConnectorFemale.Size = new Size(70, 23);
+        rdbConnectorFemale.TabIndex = 1;
+        rdbConnectorFemale.TabStop = true;
+        rdbConnectorFemale.Text = "Female";
+        rdbConnectorFemale.UseVisualStyleBackColor = true;
+        // 
+        // lblConnectorGender
+        // 
+        lblConnectorGender.AutoSize = true;
+        lblConnectorGender.Font = new Font("Segoe UI", 11F, FontStyle.Bold);
+        lblConnectorGender.Location = new Point(0, 0);
+        lblConnectorGender.Name = "lblConnectorGender";
+        lblConnectorGender.Size = new Size(116, 20);
+        lblConnectorGender.TabIndex = 0;
+        lblConnectorGender.Text = "Connector type";
+        // 
+        // rdb02
+        // 
+        rdb02.AutoSize = true;
+        rdb02.Font = new Font("Segoe UI", 10F);
+        rdb02.Location = new Point(115, 257);
+        rdb02.Name = "rdb02";
+        rdb02.Size = new Size(90, 23);
+        rdb02.TabIndex = 24;
+        rdb02.Text = "Station 02";
+        rdb02.UseVisualStyleBackColor = true;
+        // 
+        // rdb03
+        // 
+        rdb03.AutoSize = true;
+        rdb03.Font = new Font("Segoe UI", 10F);
+        rdb03.Location = new Point(211, 257);
+        rdb03.Name = "rdb03";
+        rdb03.Size = new Size(90, 23);
+        rdb03.TabIndex = 23;
+        rdb03.Text = "Station 03";
+        rdb03.UseVisualStyleBackColor = true;
+        // 
+        // rdb01
+        // 
+        rdb01.AutoSize = true;
+        rdb01.Font = new Font("Segoe UI", 10F);
+        rdb01.Location = new Point(15, 257);
+        rdb01.Name = "rdb01";
+        rdb01.Size = new Size(90, 23);
+        rdb01.TabIndex = 22;
+        rdb01.Text = "Station 01";
+        rdb01.UseVisualStyleBackColor = true;
+        // 
+        // label2
+        // 
+        label2.AutoSize = true;
+        label2.Font = new Font("Segoe UI", 11F, FontStyle.Bold);
+        label2.Location = new Point(15, 232);
+        label2.Name = "label2";
+        label2.Size = new Size(164, 20);
+        label2.TabIndex = 21;
+        label2.Text = "Liberación de material";
         // 
         // btnReset
         // 
         btnReset.Font = new Font("Segoe UI", 11F);
-        btnReset.Location = new Point(115, 715);
+        btnReset.Location = new Point(115, 582);
         btnReset.Name = "btnReset";
         btnReset.Size = new Size(100, 35);
         btnReset.TabIndex = 20;
@@ -142,7 +241,7 @@ partial class RecipeEditorForm
         // btnSave
         // 
         btnSave.Font = new Font("Segoe UI", 11F, FontStyle.Bold);
-        btnSave.Location = new Point(5, 715);
+        btnSave.Location = new Point(5, 582);
         btnSave.Name = "btnSave";
         btnSave.Size = new Size(100, 35);
         btnSave.TabIndex = 19;
@@ -153,7 +252,7 @@ partial class RecipeEditorForm
         // btnRemoveTool
         // 
         btnRemoveTool.Font = new Font("Segoe UI", 10F);
-        btnRemoveTool.Location = new Point(15, 657);
+        btnRemoveTool.Location = new Point(15, 524);
         btnRemoveTool.Name = "btnRemoveTool";
         btnRemoveTool.Size = new Size(100, 26);
         btnRemoveTool.TabIndex = 18;
@@ -166,7 +265,7 @@ partial class RecipeEditorForm
         lstTools.Font = new Font("Segoe UI", 10F);
         lstTools.FormattingEnabled = true;
         lstTools.ItemHeight = 17;
-        lstTools.Location = new Point(15, 613);
+        lstTools.Location = new Point(15, 480);
         lstTools.Name = "lstTools";
         lstTools.Size = new Size(420, 38);
         lstTools.TabIndex = 17;
@@ -174,7 +273,7 @@ partial class RecipeEditorForm
         // btnAddTool
         // 
         btnAddTool.Font = new Font("Segoe UI", 10F);
-        btnAddTool.Location = new Point(375, 581);
+        btnAddTool.Location = new Point(375, 448);
         btnAddTool.Name = "btnAddTool";
         btnAddTool.Size = new Size(60, 26);
         btnAddTool.TabIndex = 16;
@@ -185,7 +284,7 @@ partial class RecipeEditorForm
         // txtToolBarcode
         // 
         txtToolBarcode.Font = new Font("Segoe UI", 10F);
-        txtToolBarcode.Location = new Point(225, 581);
+        txtToolBarcode.Location = new Point(225, 448);
         txtToolBarcode.Name = "txtToolBarcode";
         txtToolBarcode.PlaceholderText = "Barcode";
         txtToolBarcode.Size = new Size(140, 25);
@@ -194,7 +293,7 @@ partial class RecipeEditorForm
         // txtToolName
         // 
         txtToolName.Font = new Font("Segoe UI", 10F);
-        txtToolName.Location = new Point(15, 581);
+        txtToolName.Location = new Point(15, 448);
         txtToolName.Name = "txtToolName";
         txtToolName.PlaceholderText = "Tool name";
         txtToolName.Size = new Size(200, 25);
@@ -204,7 +303,7 @@ partial class RecipeEditorForm
         // 
         lblTools.AutoSize = true;
         lblTools.Font = new Font("Segoe UI", 11F, FontStyle.Bold);
-        lblTools.Location = new Point(15, 558);
+        lblTools.Location = new Point(15, 425);
         lblTools.Name = "lblTools";
         lblTools.Size = new Size(46, 20);
         lblTools.TabIndex = 13;
@@ -213,7 +312,7 @@ partial class RecipeEditorForm
         // btnRemoveMaterial
         // 
         btnRemoveMaterial.Font = new Font("Segoe UI", 10F);
-        btnRemoveMaterial.Location = new Point(15, 529);
+        btnRemoveMaterial.Location = new Point(15, 396);
         btnRemoveMaterial.Name = "btnRemoveMaterial";
         btnRemoveMaterial.Size = new Size(100, 26);
         btnRemoveMaterial.TabIndex = 12;
@@ -226,7 +325,7 @@ partial class RecipeEditorForm
         lstMaterials.Font = new Font("Segoe UI", 10F);
         lstMaterials.FormattingEnabled = true;
         lstMaterials.ItemHeight = 17;
-        lstMaterials.Location = new Point(15, 485);
+        lstMaterials.Location = new Point(15, 352);
         lstMaterials.Name = "lstMaterials";
         lstMaterials.Size = new Size(420, 38);
         lstMaterials.TabIndex = 11;
@@ -234,7 +333,7 @@ partial class RecipeEditorForm
         // btnAddMaterial
         // 
         btnAddMaterial.Font = new Font("Segoe UI", 10F);
-        btnAddMaterial.Location = new Point(375, 453);
+        btnAddMaterial.Location = new Point(375, 320);
         btnAddMaterial.Name = "btnAddMaterial";
         btnAddMaterial.Size = new Size(60, 26);
         btnAddMaterial.TabIndex = 10;
@@ -245,7 +344,7 @@ partial class RecipeEditorForm
         // txtMaterialBarcode
         // 
         txtMaterialBarcode.Font = new Font("Segoe UI", 10F);
-        txtMaterialBarcode.Location = new Point(225, 453);
+        txtMaterialBarcode.Location = new Point(225, 320);
         txtMaterialBarcode.Name = "txtMaterialBarcode";
         txtMaterialBarcode.PlaceholderText = "Barcode";
         txtMaterialBarcode.Size = new Size(140, 25);
@@ -254,7 +353,7 @@ partial class RecipeEditorForm
         // txtMaterialName
         // 
         txtMaterialName.Font = new Font("Segoe UI", 10F);
-        txtMaterialName.Location = new Point(15, 453);
+        txtMaterialName.Location = new Point(15, 320);
         txtMaterialName.Name = "txtMaterialName";
         txtMaterialName.PlaceholderText = "Material name";
         txtMaterialName.Size = new Size(200, 25);
@@ -264,19 +363,11 @@ partial class RecipeEditorForm
         // 
         lblMaterials.AutoSize = true;
         lblMaterials.Font = new Font("Segoe UI", 11F, FontStyle.Bold);
-        lblMaterials.Location = new Point(15, 430);
+        lblMaterials.Location = new Point(15, 297);
         lblMaterials.Name = "lblMaterials";
         lblMaterials.Size = new Size(74, 20);
         lblMaterials.TabIndex = 7;
         lblMaterials.Text = "Materials";
-        // 
-        // stationPanelsContainer
-        // 
-        stationPanelsContainer.AutoScroll = true;
-        stationPanelsContainer.Location = new Point(15, 225);
-        stationPanelsContainer.Name = "stationPanelsContainer";
-        stationPanelsContainer.Size = new Size(750, 200);
-        stationPanelsContainer.TabIndex = 10;
         // 
         // pnlBGInputs
         // 
@@ -383,15 +474,18 @@ partial class RecipeEditorForm
         // 
         AutoScaleDimensions = new SizeF(7F, 15F);
         AutoScaleMode = AutoScaleMode.Font;
-        ClientSize = new Size(1100, 800);
+        ClientSize = new Size(1100, 629);
         Controls.Add(scrollPanel);
         Controls.Add(pnlLeft);
+        FormBorderStyle = FormBorderStyle.FixedToolWindow;
         Name = "RecipeEditorForm";
         StartPosition = FormStartPosition.CenterParent;
         Text = "Recipe Editor";
         pnlLeft.ResumeLayout(false);
         scrollPanel.ResumeLayout(false);
         scrollPanel.PerformLayout();
+        pnlConnectorGender.ResumeLayout(false);
+        pnlConnectorGender.PerformLayout();
         ResumeLayout(false);
     }
 
@@ -415,7 +509,6 @@ partial class RecipeEditorForm
     private RadioButton radBG4 = null!;
 
     internal Panel pnlBGInputs = null!;
-    internal Panel stationPanelsContainer = null!;
 
     private Label lblMaterials = null!;
     private TextBox txtMaterialName = null!;
@@ -433,4 +526,13 @@ partial class RecipeEditorForm
 
     private Button btnSave = null!;
     private Button btnReset = null!;
+    private Label label1;
+    private RadioButton rdb02;
+    private RadioButton rdb03;
+    private RadioButton rdb01;
+    private Label label2;
+    private Panel pnlConnectorGender;
+    private RadioButton rdbConnectorMale;
+    private RadioButton rdbConnectorFemale;
+    private Label lblConnectorGender;
 }

@@ -14,13 +14,16 @@ public static class CognexService
     public static void Initialize(string com1, string com2, string com3)
     {
         LogService.Log("CognexService.Initialize() starting...");
+        SystemEventLogService.LogInfo("COGNEX", "General", "CognexService.Initialize() starting");
         var portNames = new[] { com1, com2, com3 };
 
         for (int i = 0; i < 3; i++)
         {
+            var station = $"Station {i + 1}";
             try
             {
                 LogService.Log($"Attempting to open Station {i + 1} on {portNames[i]}...");
+                SystemEventLogService.LogInfo("COGNEX", station, $"Attempting to open port {portNames[i]}");
                 var port = new SerialPort(portNames[i])
                 {
                     BaudRate = 115200,
@@ -36,6 +39,7 @@ public static class CognexService
 
                 port.Open();
                 _ports[i] = port;
+                SystemEventLogService.LogInfo("COGNEX", station, $"Connected on {portNames[i]}");
 
                 LogService.Log($"✓ Cognex Station {i + 1} connected on {portNames[i]}");
 
@@ -52,6 +56,7 @@ public static class CognexService
             catch (Exception ex)
             {
                 LogService.LogError($"Failed to open {portNames[i]}", ex);
+                SystemEventLogService.LogError("COGNEX", station, $"Failed to open port {portNames[i]}", ex);
             }
         }
     }
@@ -59,6 +64,7 @@ public static class CognexService
     private static void ReadPortData(int stationNumber, SerialPort port)
     {
         LogService.Log($"[ReadThread-{stationNumber}] Started reader thread");
+        SystemEventLogService.LogInfo("SCANNER", $"Station {stationNumber}", $"Started reader thread on {port.PortName}");
         var buffer = new System.Text.StringBuilder();
 
         while (_running && port.IsOpen)
@@ -68,7 +74,6 @@ public static class CognexService
                 if (port.BytesToRead > 0)
                 {
                     int byteRead = port.ReadByte();
-                    LogService.Log($"[ReadThread-{stationNumber}] Byte: {byteRead} ('{(char)byteRead}')");
 
                     // Carriage return (\r = 13) o Line feed (\n = 10)
                     if (byteRead == 13 || byteRead == 10)
@@ -77,6 +82,7 @@ public static class CognexService
                         if (!string.IsNullOrEmpty(line))
                         {
                             LogService.Log($"[ReadThread-{stationNumber}] Complete line: '{line}'");
+                            SystemEventLogService.LogInfo("SCANNER", $"Station {stationNumber}", $"Complete line: '{line}'");
                             ProcessData(stationNumber, line);
                         }
                         buffer.Clear();
@@ -97,11 +103,13 @@ public static class CognexService
             catch (Exception ex)
             {
                 LogService.LogError($"[ReadThread-{stationNumber}] Error", ex);
+                SystemEventLogService.LogError("SCANNER", $"Station {stationNumber}", "Reader thread error", ex);
                 Thread.Sleep(100);
             }
         }
 
         LogService.Log($"[ReadThread-{stationNumber}] Exited");
+        SystemEventLogService.LogInfo("SCANNER", $"Station {stationNumber}", "Reader thread exited");
     }
 
     private static void ProcessData(int stationNumber, string line)
@@ -118,17 +126,20 @@ public static class CognexService
 
             LogService.Log($"✓ [COM Station {stationNumber}] Data received: {data}");
 
+            SystemEventLogService.LogInfo("SCANNER", $"Station {stationNumber}", $"Data received: {data}");
             CableReceived?.Invoke(stationNumber, data);
         }
         catch (Exception ex)
         {
             LogService.LogError($"[ProcessData-{stationNumber}] Error", ex);
+            SystemEventLogService.LogError("SCANNER", $"Station {stationNumber}", "Error processing scanner data", ex);
         }
     }
 
     public static void Stop()
     {
         LogService.Log("CognexService.Stop() called");
+        SystemEventLogService.LogInfo("COGNEX", "General", "CognexService.Stop() called");
         _running = false;
 
         lock (_lockObj)
@@ -153,5 +164,6 @@ public static class CognexService
         }
 
         LogService.Log("CognexService stopped");
+        SystemEventLogService.LogInfo("COGNEX", "General", "CognexService stopped");
     }
 }
