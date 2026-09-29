@@ -18,6 +18,30 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Update="Forms\StationCountersForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Update="Forms\StationCountersForm.Designer.cs">
+      <DependentUpon>StationCountersForm.cs</DependentUpon>
+    </Compile>
+    <Compile Update="Forms\SettingsEditorForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Update="Forms\SettingsEditorForm.Designer.cs">
+      <DependentUpon>SettingsEditorForm.cs</DependentUpon>
+    </Compile>
+    <Compile Update="Forms\StationErrorAlertForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Update="Forms\StationErrorAlertForm.Designer.cs">
+      <DependentUpon>StationErrorAlertForm.cs</DependentUpon>
+    </Compile>
+    <Compile Update="Forms\AdminUnlockForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Update="Forms\AdminUnlockForm.Designer.cs">
+      <DependentUpon>AdminUnlockForm.cs</DependentUpon>
+    </Compile>
     <Compile Update="Properties\Resources.Designer.cs">
       <DesignTime>True</DesignTime>
       <AutoGen>True</AutoGen>

@@ -20,14 +20,22 @@ public static class MesPieceLogService
                 var timestamp = DateTime.Now;
                 var station = SanitizeFileName(entry.Station);
                 var serial = SanitizeFileName(entry.SerialNumber);
-                var result = entry.Success ? "OK" : "NOK";
+                var result = string.IsNullOrWhiteSpace(entry.Classification)
+                    ? (entry.Success ? "OK" : "API_ERROR")
+                    : SanitizeFileName(entry.Classification);
 
                 // Cambio solicitado: trazabilidad MES por pieza revisada, un archivo por serial.
                 var dir = Path.Combine(BasePath, timestamp.ToString("yyyy-MM-dd"), station);
                 Directory.CreateDirectory(dir);
 
-                var fileName = $"{timestamp:yyyyMMdd_HHmmss_fff}_{serial}_{result}_{Guid.NewGuid():N}.json";
-                var path = Path.Combine(dir, fileName);
+                var baseFileName = $"{timestamp:yyyyMMdd}_{serial}_{result}";
+                var path = Path.Combine(dir, $"{baseFileName}.json");
+                var duplicateNumber = 2;
+                while (File.Exists(path))
+                {
+                    path = Path.Combine(dir, $"{baseFileName}_{duplicateNumber}.json");
+                    duplicateNumber++;
+                }
 
                 entry.Timestamp = timestamp;
                 File.WriteAllText(path, JsonSerializer.Serialize(entry, _jsonOptions));
@@ -62,6 +70,8 @@ public class MesPieceLogEntry
     public string SerialNumber { get; set; } = string.Empty;
     public int CableCount { get; set; }
     public bool Success { get; set; }
+    public bool IsScrap { get; set; }
+    public string Classification { get; set; } = string.Empty;
     public int? StatusCode { get; set; }
     public int? ResultCode { get; set; }
     public string ResultText { get; set; } = string.Empty;

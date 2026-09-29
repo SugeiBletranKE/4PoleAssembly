@@ -6,56 +6,63 @@ namespace FourAssembly.MultiStation.Controls
         private Label _lblStation;
         private TextBox _txtScanInput;
         private ListView _lstCables;
-        private Label _lblCableCount;
         private Label _lblScrapCount;
         private Label _lblInsertedCount;
-        private Button _btnReviewApi;
+        private Label _lblGoodPieceCount;
+        private Button _btnResetGoodCount;
         private Button _btnFinalize;
         private Button _btnReset;
+        private Button _btnAdminRecoveryReset;
         private Label _lblStatus;
         private Label _lblApiInfo;
         private TextBox _txtApiInfo;
+        private Panel pnlMasterStatus;
+        private Label lblMasterPartNumber;
+        private Label lblMasterStatus;
+        private Label lblMasterProcessState;
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing && (components != null))
-            {
+            if (disposing && components != null)
                 components.Dispose();
-            }
             base.Dispose(disposing);
         }
 
         private void InitializeComponent()
         {
-            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(StationPanel));
             _lblStation = new Label();
             _txtScanInput = new TextBox();
             _lstCables = new ListView();
-            _lblCableCount = new Label();
             _lblScrapCount = new Label();
             _lblInsertedCount = new Label();
-            _btnReviewApi = new Button();
+            _lblGoodPieceCount = new Label();
+            _btnResetGoodCount = new Button();
             _btnFinalize = new Button();
             _btnReset = new Button();
+            _btnAdminRecoveryReset = new Button();
             _lblStatus = new Label();
             _lblApiInfo = new Label();
             _txtApiInfo = new TextBox();
-            panel1 = new Panel();
-            button1 = new Button();
-            panel2 = new Panel();
             lblInfo = new Label();
             lblBG = new Label();
-            panel1.SuspendLayout();
+            panel3 = new Panel();
+            panel4 = new Panel();
+            pnlMasterStatus = new Panel();
+            lblMasterProcessState = new Label();
+            lblMasterStatus = new Label();
+            lblMasterPartNumber = new Label();
+            panel3.SuspendLayout();
+            pnlMasterStatus.SuspendLayout();
             SuspendLayout();
             // 
             // _lblStation
             // 
-            _lblStation.Dock = DockStyle.Top;
+            _lblStation.Dock = DockStyle.Fill;
             _lblStation.Font = new Font("Malgun Gothic", 27.75F, FontStyle.Bold, GraphicsUnit.Point, 0);
             _lblStation.ForeColor = Color.FromArgb(20, 55, 100);
-            _lblStation.Location = new Point(0, 75);
+            _lblStation.Location = new Point(0, 0);
             _lblStation.Name = "_lblStation";
-            _lblStation.Size = new Size(1343, 91);
+            _lblStation.Size = new Size(1079, 98);
             _lblStation.TabIndex = 0;
             _lblStation.Text = "Station";
             _lblStation.TextAlign = ContentAlignment.MiddleCenter;
@@ -72,27 +79,14 @@ namespace FourAssembly.MultiStation.Controls
             // 
             // _lstCables
             // 
-            _lstCables.Location = new Point(20, 394);
+            _lstCables.Dock = DockStyle.Top;
+            _lstCables.Font = new Font("Segoe UI", 24F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            _lstCables.Location = new Point(0, 346);
             _lstCables.Name = "_lstCables";
-            _lstCables.Size = new Size(672, 224);
+            _lstCables.Size = new Size(1343, 91);
             _lstCables.TabIndex = 5;
             _lstCables.UseCompatibleStateImageBehavior = false;
             _lstCables.View = View.List;
-            // 
-            // _lblCableCount
-            // 
-            _lblCableCount.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-            _lblCableCount.BackColor = Color.FromArgb(245, 248, 252);
-            _lblCableCount.BorderStyle = BorderStyle.FixedSingle;
-            _lblCableCount.Font = new Font("Segoe UI", 15F, FontStyle.Bold, GraphicsUnit.Point, 0);
-            _lblCableCount.ForeColor = Color.FromArgb(20, 55, 100);
-            _lblCableCount.Location = new Point(1030, 562);
-            _lblCableCount.Name = "_lblCableCount";
-            _lblCableCount.Size = new Size(285, 52);
-            _lblCableCount.TabIndex = 6;
-            _lblCableCount.Text = "Escaneo total: 0";
-            _lblCableCount.TextAlign = ContentAlignment.MiddleCenter;
-            _lblCableCount.Visible = false;
             // 
             // _lblScrapCount
             // 
@@ -101,7 +95,7 @@ namespace FourAssembly.MultiStation.Controls
             _lblScrapCount.BorderStyle = BorderStyle.FixedSingle;
             _lblScrapCount.Font = new Font("Segoe UI", 15F, FontStyle.Bold, GraphicsUnit.Point, 0);
             _lblScrapCount.ForeColor = Color.Red;
-            _lblScrapCount.Location = new Point(1030, 620);
+            _lblScrapCount.Location = new Point(1043, 569);
             _lblScrapCount.Name = "_lblScrapCount";
             _lblScrapCount.Size = new Size(285, 52);
             _lblScrapCount.TabIndex = 19;
@@ -115,30 +109,46 @@ namespace FourAssembly.MultiStation.Controls
             _lblInsertedCount.BorderStyle = BorderStyle.FixedSingle;
             _lblInsertedCount.Font = new Font("Segoe UI", 15F, FontStyle.Bold, GraphicsUnit.Point, 0);
             _lblInsertedCount.ForeColor = Color.DarkGreen;
-            _lblInsertedCount.Location = new Point(1030, 678);
+            _lblInsertedCount.Location = new Point(1043, 627);
             _lblInsertedCount.Name = "_lblInsertedCount";
             _lblInsertedCount.Size = new Size(285, 52);
             _lblInsertedCount.TabIndex = 20;
             _lblInsertedCount.Text = "Total de piezas 0/0";
             _lblInsertedCount.TextAlign = ContentAlignment.MiddleCenter;
             // 
-            // _btnReviewApi
+            // _lblGoodPieceCount
             // 
-            _btnReviewApi.BackColor = Color.DodgerBlue;
-            _btnReviewApi.ForeColor = Color.White;
-            _btnReviewApi.Location = new Point(1000, 750);
-            _btnReviewApi.Name = "_btnReviewApi";
-            _btnReviewApi.Size = new Size(100, 40);
-            _btnReviewApi.TabIndex = 16;
-            _btnReviewApi.Text = "Review API";
-            _btnReviewApi.UseVisualStyleBackColor = false;
-            _btnReviewApi.Visible = false;
-            _btnReviewApi.Click += _btnReviewApi_Click;
+            _lblGoodPieceCount.BackColor = Color.Honeydew;
+            _lblGoodPieceCount.BorderStyle = BorderStyle.FixedSingle;
+            _lblGoodPieceCount.Dock = DockStyle.Right;
+            _lblGoodPieceCount.Font = new Font("Segoe UI", 15.75F, FontStyle.Bold, GraphicsUnit.Point, 0);
+            _lblGoodPieceCount.ForeColor = Color.DarkGreen;
+            _lblGoodPieceCount.Location = new Point(1079, 0);
+            _lblGoodPieceCount.Name = "_lblGoodPieceCount";
+            _lblGoodPieceCount.Size = new Size(264, 98);
+            _lblGoodPieceCount.TabIndex = 21;
+            _lblGoodPieceCount.Text = "Total estación: 0\r\nBG --: 0\r\nHora 00:00-01:00: 0";
+            _lblGoodPieceCount.TextAlign = ContentAlignment.MiddleCenter;
+            // 
+            // _btnResetGoodCount
+            // 
+            _btnResetGoodCount.BackColor = Color.WhiteSmoke;
+            _btnResetGoodCount.Dock = DockStyle.Bottom;
+            _btnResetGoodCount.FlatStyle = FlatStyle.Flat;
+            _btnResetGoodCount.Font = new Font("Segoe UI Semibold", 9.75F, FontStyle.Bold, GraphicsUnit.Point, 0);
+            _btnResetGoodCount.Location = new Point(0, 41);
+            _btnResetGoodCount.Name = "_btnResetGoodCount";
+            _btnResetGoodCount.Size = new Size(216, 39);
+            _btnResetGoodCount.TabIndex = 22;
+            _btnResetGoodCount.Text = "Reset piezas";
+            _btnResetGoodCount.UseVisualStyleBackColor = false;
+            _btnResetGoodCount.Visible = false;
+            _btnResetGoodCount.Click += _btnResetGoodCount_Click;
             // 
             // _btnFinalize
             // 
             _btnFinalize.BackColor = Color.LimeGreen;
-            _btnFinalize.Location = new Point(1120, 750);
+            _btnFinalize.Location = new Point(1176, 639);
             _btnFinalize.Name = "_btnFinalize";
             _btnFinalize.Size = new Size(100, 40);
             _btnFinalize.TabIndex = 7;
@@ -149,14 +159,36 @@ namespace FourAssembly.MultiStation.Controls
             // 
             // _btnReset
             // 
-            _btnReset.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            _btnReset.Location = new Point(698, 750);
+            _btnReset.Dock = DockStyle.Top;
+            _btnReset.FlatAppearance.BorderColor = Color.Maroon;
+            _btnReset.FlatStyle = FlatStyle.Flat;
+            _btnReset.Font = new Font("Segoe UI Semibold", 9.75F, FontStyle.Bold, GraphicsUnit.Point, 0);
+            _btnReset.ForeColor = Color.Maroon;
+            _btnReset.Location = new Point(0, 0);
             _btnReset.Name = "_btnReset";
-            _btnReset.Size = new Size(151, 71);
+            _btnReset.Size = new Size(216, 39);
             _btnReset.TabIndex = 8;
-            _btnReset.Text = "Reset";
+            _btnReset.Text = "Reset general";
             _btnReset.UseVisualStyleBackColor = true;
+            _btnReset.Visible = false;
             _btnReset.Click += _btnReset_Click;
+            // 
+            // _btnAdminRecoveryReset
+            // 
+            _btnAdminRecoveryReset.BackColor = Color.White;
+            _btnAdminRecoveryReset.Dock = DockStyle.Bottom;
+            _btnAdminRecoveryReset.FlatAppearance.BorderSize = 0;
+            _btnAdminRecoveryReset.FlatStyle = FlatStyle.Flat;
+            _btnAdminRecoveryReset.Font = new Font("Segoe UI", 8.25F, FontStyle.Bold, GraphicsUnit.Point, 0);
+            _btnAdminRecoveryReset.ForeColor = Color.Gray;
+            _btnAdminRecoveryReset.Location = new Point(0, 797);
+            _btnAdminRecoveryReset.Name = "_btnAdminRecoveryReset";
+            _btnAdminRecoveryReset.Size = new Size(1343, 30);
+            _btnAdminRecoveryReset.TabIndex = 24;
+            _btnAdminRecoveryReset.Text = "Four Assembly";
+            _btnAdminRecoveryReset.TextImageRelation = TextImageRelation.TextAboveImage;
+            _btnAdminRecoveryReset.UseVisualStyleBackColor = false;
+            _btnAdminRecoveryReset.Click += _btnAdminRecoveryReset_Click;
             // 
             // _lblStatus
             // 
@@ -170,9 +202,10 @@ namespace FourAssembly.MultiStation.Controls
             // _lblApiInfo
             // 
             _lblApiInfo.AutoSize = true;
+            _lblApiInfo.Dock = DockStyle.Top;
             _lblApiInfo.Font = new Font("Segoe UI", 12F, FontStyle.Bold, GraphicsUnit.Point, 0);
             _lblApiInfo.ForeColor = Color.FromArgb(20, 55, 100);
-            _lblApiInfo.Location = new Point(31, 628);
+            _lblApiInfo.Location = new Point(0, 325);
             _lblApiInfo.Name = "_lblApiInfo";
             _lblApiInfo.Size = new Size(71, 21);
             _lblApiInfo.TabIndex = 17;
@@ -180,54 +213,23 @@ namespace FourAssembly.MultiStation.Controls
             // 
             // _txtApiInfo
             // 
-            _txtApiInfo.Font = new Font("Consolas", 9F);
-            _txtApiInfo.Location = new Point(31, 652);
+            _txtApiInfo.Font = new Font("Consolas", 18F, FontStyle.Bold, GraphicsUnit.Point, 0);
+            _txtApiInfo.Location = new Point(3, 515);
             _txtApiInfo.Multiline = true;
             _txtApiInfo.Name = "_txtApiInfo";
             _txtApiInfo.ReadOnly = true;
             _txtApiInfo.ScrollBars = ScrollBars.Vertical;
-            _txtApiInfo.Size = new Size(661, 169);
+            _txtApiInfo.Size = new Size(1034, 270);
             _txtApiInfo.TabIndex = 18;
-            // 
-            // panel1
-            // 
-            panel1.BackColor = Color.FromArgb(20, 55, 100);
-            panel1.Controls.Add(button1);
-            panel1.Dock = DockStyle.Top;
-            panel1.Location = new Point(0, 0);
-            panel1.Name = "panel1";
-            panel1.Size = new Size(1343, 24);
-            panel1.TabIndex = 12;
-            // 
-            // button1
-            // 
-            button1.Dock = DockStyle.Right;
-            button1.FlatAppearance.BorderSize = 0;
-            button1.FlatStyle = FlatStyle.Flat;
-            button1.Image = (Image)resources.GetObject("button1.Image");
-            button1.Location = new Point(1295, 0);
-            button1.Name = "button1";
-            button1.Size = new Size(48, 24);
-            button1.TabIndex = 0;
-            button1.UseVisualStyleBackColor = true;
-            // 
-            // panel2
-            // 
-            panel2.BackColor = Color.FromArgb(20, 55, 100);
-            panel2.Dock = DockStyle.Top;
-            panel2.Location = new Point(0, 24);
-            panel2.Name = "panel2";
-            panel2.Size = new Size(1343, 51);
-            panel2.TabIndex = 13;
             // 
             // lblInfo
             // 
             lblInfo.Dock = DockStyle.Top;
             lblInfo.Font = new Font("Malgun Gothic", 30F, FontStyle.Bold, GraphicsUnit.Point, 0);
             lblInfo.ForeColor = Color.DarkOrange;
-            lblInfo.Location = new Point(0, 166);
+            lblInfo.Location = new Point(0, 254);
             lblInfo.Name = "lblInfo";
-            lblInfo.Size = new Size(1343, 97);
+            lblInfo.Size = new Size(1343, 71);
             lblInfo.TabIndex = 14;
             lblInfo.Text = "--";
             lblInfo.TextAlign = ContentAlignment.MiddleCenter;
@@ -237,42 +239,108 @@ namespace FourAssembly.MultiStation.Controls
             lblBG.Dock = DockStyle.Top;
             lblBG.Font = new Font("Malgun Gothic", 30F, FontStyle.Bold, GraphicsUnit.Point, 0);
             lblBG.ForeColor = Color.DarkOrange;
-            lblBG.Location = new Point(0, 263);
+            lblBG.Location = new Point(0, 178);
             lblBG.Name = "lblBG";
-            lblBG.Size = new Size(1343, 87);
+            lblBG.Size = new Size(1343, 76);
             lblBG.TabIndex = 15;
             lblBG.Text = "--";
             lblBG.TextAlign = ContentAlignment.MiddleCenter;
+            lblBG.Click += lblBG_Click;
+            // 
+            // panel3
+            // 
+            panel3.BackColor = Color.White;
+            panel3.Controls.Add(_lblStation);
+            panel3.Controls.Add(_lblGoodPieceCount);
+            panel3.Dock = DockStyle.Top;
+            panel3.Location = new Point(0, 80);
+            panel3.Name = "panel3";
+            panel3.Size = new Size(1343, 98);
+            panel3.TabIndex = 14;
+            panel3.Paint += panel3_Paint;
+            // 
+            // panel4
+            // 
+            panel4.BackColor = Color.White;
+            panel4.Dock = DockStyle.Right;
+            panel4.Location = new Point(1127, 0);
+            panel4.Name = "panel4";
+            panel4.Size = new Size(216, 80);
+            panel4.TabIndex = 15;
+            // 
+            // pnlMasterStatus
+            // 
+            pnlMasterStatus.BackColor = Color.DarkGray;
+            pnlMasterStatus.Controls.Add(lblMasterProcessState);
+            pnlMasterStatus.Controls.Add(lblMasterStatus);
+            pnlMasterStatus.Controls.Add(lblMasterPartNumber);
+            pnlMasterStatus.Dock = DockStyle.Top;
+            pnlMasterStatus.Location = new Point(0, 0);
+            pnlMasterStatus.Name = "pnlMasterStatus";
+            pnlMasterStatus.Size = new Size(1343, 80);
+            pnlMasterStatus.TabIndex = 23;
+            // 
+            // lblMasterProcessState
+            // 
+            lblMasterProcessState.AutoSize = true;
+            lblMasterProcessState.Font = new Font("Segoe UI", 10F);
+            lblMasterProcessState.ForeColor = Color.Orange;
+            lblMasterProcessState.Location = new Point(350, 15);
+            lblMasterProcessState.Name = "lblMasterProcessState";
+            lblMasterProcessState.Size = new Size(134, 19);
+            lblMasterProcessState.TabIndex = 2;
+            lblMasterProcessState.Text = "Esperando proceso...";
+            // 
+            // lblMasterStatus
+            // 
+            lblMasterStatus.AutoSize = true;
+            lblMasterStatus.Font = new Font("Segoe UI", 11F);
+            lblMasterStatus.ForeColor = Color.White;
+            lblMasterStatus.Location = new Point(10, 50);
+            lblMasterStatus.Name = "lblMasterStatus";
+            lblMasterStatus.Size = new Size(124, 20);
+            lblMasterStatus.TabIndex = 1;
+            lblMasterStatus.Text = "Status: DISABLED";
+            // 
+            // lblMasterPartNumber
+            // 
+            lblMasterPartNumber.AutoSize = true;
+            lblMasterPartNumber.Font = new Font("Segoe UI", 20F, FontStyle.Bold);
+            lblMasterPartNumber.ForeColor = Color.White;
+            lblMasterPartNumber.Location = new Point(10, 7);
+            lblMasterPartNumber.Name = "lblMasterPartNumber";
+            lblMasterPartNumber.Size = new Size(213, 37);
+            lblMasterPartNumber.TabIndex = 0;
+            lblMasterPartNumber.Text = "PartNumber: --";
             // 
             // StationPanel
             // 
             BackColor = Color.White;
-            Controls.Add(lblBG);
-            Controls.Add(lblInfo);
-            Controls.Add(_lblStation);
-            Controls.Add(panel2);
-            Controls.Add(panel1);
-            Controls.Add(_txtScanInput);
             Controls.Add(_lstCables);
-            Controls.Add(_lblCableCount);
+            Controls.Add(_btnAdminRecoveryReset);
+            Controls.Add(_lblApiInfo);
+            Controls.Add(lblInfo);
+            Controls.Add(_txtScanInput);
             Controls.Add(_lblScrapCount);
             Controls.Add(_lblInsertedCount);
             Controls.Add(_txtApiInfo);
-            Controls.Add(_lblApiInfo);
-            Controls.Add(_btnReviewApi);
             Controls.Add(_btnFinalize);
-            Controls.Add(_btnReset);
             Controls.Add(_lblStatus);
+            Controls.Add(lblBG);
+            Controls.Add(panel3);
+            Controls.Add(pnlMasterStatus);
             Name = "StationPanel";
             Size = new Size(1343, 852);
-            panel1.ResumeLayout(false);
+            Load += StationPanel_Load;
+            panel3.ResumeLayout(false);
+            pnlMasterStatus.ResumeLayout(false);
+            pnlMasterStatus.PerformLayout();
             ResumeLayout(false);
             PerformLayout();
         }
-        private Panel panel1;
-        private Button button1;
-        private Panel panel2;
         private Label lblInfo;
         private Label lblBG;
+        private Panel panel3;
+        private Panel panel4;
     }
 }

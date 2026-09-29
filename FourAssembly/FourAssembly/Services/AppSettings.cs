@@ -5,6 +5,7 @@ using System.Text.Json;
 public class AppSettings
 {
     public string SapStationNumber { get; set; } = string.Empty;
+    public string AdminPass { get; set; } = string.Empty;
     public ApiConfig Api { get; set; } = new();
     public PlcConfig Plc { get; set; } = new();
     public PlcConnectorConfig PlcConnector { get; set; } = new();
@@ -15,6 +16,7 @@ public class ApiConfig
 {
     public string StationInfoUrl { get; set; } = "http://172.16.47.4:8088/main/system/webdev/Core/odc/CheckSingleSerial";
     public string SingleSerialUrl { get; set; } = string.Empty;
+    public string BookSingleSerialUrl { get; set; } = "http://172.16.47.4:8088/main/system/webdev/Core/odc/BookSingleSerial";
 }
 
 public class PlcConfig
@@ -24,6 +26,7 @@ public class PlcConfig
     public int ActiveStationRegister { get; set; } = 2;
     public int ConnectorSideRegister { get; set; } = 0;
     public int ResetMemory { get; set; }
+    public int QualityAuthorizationMemory { get; set; } = 90;
 }
 
 public class PlcConnectorConfig
@@ -39,6 +42,8 @@ public class Settings
     public string ComPort { get; set; } = string.Empty;
     public int MonitorIndex { get; set; }
     public int PlcButton { get; set; }
+    public int? PlcActiveStationRegister { get; set; }
+    public int? PlcConnectorSideRegister { get; set; }
     public int PlcSerialsComplete { get; set; }
     public int PlcStation { get; set; }
     public int PlcCounter { get; set; }
@@ -47,7 +52,10 @@ public class Settings
     public int PlcFinalProcessMemory { get; set; }
     public int PlcCounterCompleteMemory { get; set; }
     public int PlcScrapMemory { get; set; }
+    public int PlcBtnYellow { get; set; }
     public int PlcMaterialRemovedMemory { get; set; }
+    public int PlcCavityErrorMemory { get; set; }
+    public int PlcCavityErrorRegister { get; set; }
     public List<int> PlcBgPinMemories { get; set; } = [0, 0, 0, 0];
     public List<int> PlcFemalePinMemories { get; set; } = [0, 0, 0, 0];
     public List<int> PlcMalePinMemories { get; set; } = [0, 0, 0, 0];
@@ -56,6 +64,8 @@ public class Settings
 public static class SettingsManager
 {
     private static readonly string _path = @"C:\ke\FourPole\settings.json";
+
+    public static string FilePath => _path;
 
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
@@ -95,15 +105,39 @@ public static class SettingsManager
         File.WriteAllText(_path, json);
     }
 
+    public static string ReadRawJson()
+    {
+        if (!File.Exists(_path))
+            Save(CreateDefaults());
+
+        return File.ReadAllText(_path);
+    }
+
+    public static void SaveRawJson(string json)
+    {
+        _ = JsonSerializer.Deserialize<AppSettings>(json, _jsonOptions)
+            ?? throw new JsonException("El contenido de settings.json esta vacio.");
+
+        var dir = Path.GetDirectoryName(_path);
+        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            Directory.CreateDirectory(dir);
+
+        if (File.Exists(_path))
+            File.Copy(_path, _path + ".bak", overwrite: true);
+
+        File.WriteAllText(_path, json);
+    }
+
     private static AppSettings CreateDefaults() => new()
     {
         SapStationNumber = string.Empty,
         Api = new ApiConfig
         {
             StationInfoUrl = "http://172.16.47.4:8088/main/system/webdev/Core/odc/CheckSingleSerial",
-            SingleSerialUrl = string.Empty
+            SingleSerialUrl = string.Empty,
+            BookSingleSerialUrl = "http://172.16.47.4:8088/main/system/webdev/Core/odc/BookSingleSerial"
         },
-            Plc = new PlcConfig { Ip = "192.168.1.5", Port = 502, ActiveStationRegister = 2, ConnectorSideRegister = 0, ResetMemory = 0 },
+            Plc = new PlcConfig { Ip = "192.168.1.5", Port = 502, ActiveStationRegister = 2, ConnectorSideRegister = 0, ResetMemory = 0, QualityAuthorizationMemory = 90 },
         // Mapa del tipo de conector para PLC:
         // Female = A
         // Male = B
@@ -121,9 +155,9 @@ public static class SettingsManager
         // plcCounter = registro donde la app escribe el total de cables aprobados.
         Stations = new List<Settings>
         {
-            new() { StationNumber = 1, Name = "Station 1", ComPort = "COM10", MonitorIndex = 0, PlcButton = 24, PlcSerialsComplete = 201, PlcStation = 1, PlcCounter = 1, PlcInsertedCountRegister = 5, PlcQuantityProcessMemory = 61, PlcFinalProcessMemory = 55, PlcCounterCompleteMemory = 44, PlcScrapMemory = 0, PlcMaterialRemovedMemory = 0 },
-            new() { StationNumber = 2, Name = "Station 2", ComPort = "COM11", MonitorIndex = 1, PlcButton = 25, PlcSerialsComplete = 202, PlcStation = 2, PlcCounter = 9, PlcInsertedCountRegister = 7, PlcQuantityProcessMemory = 62, PlcFinalProcessMemory = 56, PlcCounterCompleteMemory = 49, PlcScrapMemory = 0, PlcMaterialRemovedMemory = 0 },
-            new() { StationNumber = 3, Name = "Station 3", ComPort = "COM12", MonitorIndex = 2, PlcButton = 26, PlcSerialsComplete = 203, PlcStation = 3, PlcCounter = 12, PlcInsertedCountRegister = 10, PlcQuantityProcessMemory = 63, PlcFinalProcessMemory = 57, PlcCounterCompleteMemory = 54, PlcScrapMemory = 0, PlcMaterialRemovedMemory = 0 }
+            new() { StationNumber = 1, Name = "Station 1", ComPort = "COM10", MonitorIndex = 0, PlcButton = 24, PlcActiveStationRegister = 91, PlcConnectorSideRegister = 95, PlcSerialsComplete = 201, PlcStation = 1, PlcCounter = 1, PlcInsertedCountRegister = 5, PlcQuantityProcessMemory = 61, PlcFinalProcessMemory = 55, PlcCounterCompleteMemory = 44, PlcScrapMemory = 0, PlcMaterialRemovedMemory = 0, PlcCavityErrorMemory = 80, PlcCavityErrorRegister = 70 },
+            new() { StationNumber = 2, Name = "Station 2", ComPort = "COM11", MonitorIndex = 1, PlcButton = 25, PlcActiveStationRegister = 90, PlcConnectorSideRegister = 94, PlcSerialsComplete = 202, PlcStation = 2, PlcCounter = 9, PlcInsertedCountRegister = 7, PlcQuantityProcessMemory = 62, PlcFinalProcessMemory = 56, PlcCounterCompleteMemory = 49, PlcScrapMemory = 0, PlcMaterialRemovedMemory = 0, PlcCavityErrorMemory = 81, PlcCavityErrorRegister = 71 },
+            new() { StationNumber = 3, Name = "Station 3", ComPort = "COM12", MonitorIndex = 2, PlcButton = 26, PlcActiveStationRegister = 2, PlcConnectorSideRegister = 0, PlcSerialsComplete = 203, PlcStation = 3, PlcCounter = 12, PlcInsertedCountRegister = 10, PlcQuantityProcessMemory = 63, PlcFinalProcessMemory = 57, PlcCounterCompleteMemory = 54, PlcScrapMemory = 0, PlcMaterialRemovedMemory = 0, PlcCavityErrorMemory = 82, PlcCavityErrorRegister = 72 }
         }
     };
 
@@ -132,6 +166,9 @@ public static class SettingsManager
         settings.Api ??= new ApiConfig();
         if (string.IsNullOrWhiteSpace(settings.Api.StationInfoUrl))
             settings.Api.StationInfoUrl = CreateDefaults().Api.StationInfoUrl;
+
+        if (string.IsNullOrWhiteSpace(settings.Api.BookSingleSerialUrl))
+            settings.Api.BookSingleSerialUrl = CreateDefaults().Api.BookSingleSerialUrl;
     }
 
     private static void NormalizeMonitorIndexes(AppSettings settings)
@@ -150,7 +187,7 @@ public static class SettingsManager
         foreach (var station in settings.Stations)
             station.MonitorIndex--;
     }
-
+    //? Revisar metodo
     private static void NormalizePlcMap(AppSettings settings)
     {
         settings.Plc ??= new PlcConfig();
@@ -168,6 +205,9 @@ public static class SettingsManager
         if (settings.Plc.ResetMemory < 0)
             settings.Plc.ResetMemory = 0;
 
+        if (settings.Plc.QualityAuthorizationMemory <= 0)
+            settings.Plc.QualityAuthorizationMemory = 90;
+
         if (string.IsNullOrWhiteSpace(settings.PlcConnector.Female))
             settings.PlcConnector.Female = "A";
 
@@ -180,6 +220,12 @@ public static class SettingsManager
             // se cargan los valores por defecto segun el numero de estacion.
             if (station.PlcButton <= 0 || station.PlcButton == 100 + station.StationNumber)
                 station.PlcButton = GetDefaultButtonMemory(station.StationNumber);
+
+            if (!station.PlcActiveStationRegister.HasValue || station.PlcActiveStationRegister <= 0)
+                station.PlcActiveStationRegister = GetDefaultActiveStationRegister(station.StationNumber);
+
+            if (!station.PlcConnectorSideRegister.HasValue || station.PlcConnectorSideRegister < 0)
+                station.PlcConnectorSideRegister = GetDefaultConnectorSideRegister(station.StationNumber);
 
             if (station.PlcSerialsComplete <= 0)
                 station.PlcSerialsComplete = 200 + station.StationNumber;
@@ -205,8 +251,17 @@ public static class SettingsManager
             if (station.PlcScrapMemory < 0)
                 station.PlcScrapMemory = 0;
 
+            if (station.PlcBtnYellow < 0)
+                station.PlcBtnYellow = 0;
+
             if (station.PlcMaterialRemovedMemory < 0)
                 station.PlcMaterialRemovedMemory = 0;
+
+            if (station.PlcCavityErrorMemory <= 0)
+                station.PlcCavityErrorMemory = 79 + station.StationNumber;
+
+            if (station.PlcCavityErrorRegister <= 0)
+                station.PlcCavityErrorRegister = 69 + station.StationNumber;
 
             station.PlcBgPinMemories ??= [0, 0, 0, 0];
             while (station.PlcBgPinMemories.Count < 4)
@@ -228,6 +283,22 @@ public static class SettingsManager
         2 => 25,
         3 => 26,
         _ => 23 + stationNumber
+    };
+
+    private static int GetDefaultActiveStationRegister(int stationNumber) => stationNumber switch
+    {
+        1 => 91,
+        2 => 90,
+        3 => 2,
+        _ => 2
+    };
+
+    private static int GetDefaultConnectorSideRegister(int stationNumber) => stationNumber switch
+    {
+        1 => 95,
+        2 => 94,
+        3 => 0,
+        _ => 0
     };
 
     private static int GetDefaultCounterRegister(int stationNumber) => stationNumber switch

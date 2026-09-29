@@ -38,9 +38,9 @@ public partial class FrmMain : Form
         OpenStations();
         SubscribeToEvents();
         _txtScanInput.Visible = true;
-        _txtScanInput.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
-        PositionMasterScanInput();
-        _txtScanInput.BringToFront();
+        pnlMasterScan.Visible = true;
+        pnlBottomArea.BringToFront();
+        pnlMasterScan.BringToFront();
         _txtScanInput.KeyDown += _txtScanInput_KeyDown;
         ZebraFlowService.ZebraReadyForStation += OnZebraReadyForMasterStation;
         this.FormClosing += FrmMain_FormClosing;
@@ -104,12 +104,13 @@ public partial class FrmMain : Form
         {
             StationNumber = appStation.StationNumber,
             SapStationNumber = _settings.SapStationNumber,
+            AdminPass = _settings.AdminPass,
             Name = appStation.Name,
             ComPort = appStation.ComPort,
             MonitorIndex = appStation.MonitorIndex,
             PlcButton = appStation.PlcButton,
-            PlcActiveStationRegister = _settings.Plc.ActiveStationRegister,
-            PlcConnectorSideRegister = _settings.Plc.ConnectorSideRegister,
+            PlcActiveStationRegister = appStation.PlcActiveStationRegister ?? _settings.Plc.ActiveStationRegister,
+            PlcConnectorSideRegister = appStation.PlcConnectorSideRegister ?? _settings.Plc.ConnectorSideRegister,
             PlcResetMemory = _settings.Plc.ResetMemory,
             PlcSerialsComplete = appStation.PlcSerialsComplete,
             PlcStation = appStation.PlcStation,
@@ -119,7 +120,11 @@ public partial class FrmMain : Form
             PlcFinalProcessMemory = appStation.PlcFinalProcessMemory,
             PlcCounterCompleteMemory = appStation.PlcCounterCompleteMemory,
             PlcScrapMemory = appStation.PlcScrapMemory,
+            PlcBtnYellow = appStation.PlcBtnYellow,
             PlcMaterialRemovedMemory = appStation.PlcMaterialRemovedMemory,
+            PlcCavityErrorMemory = appStation.PlcCavityErrorMemory,
+            PlcCavityErrorRegister = appStation.PlcCavityErrorRegister,
+            PlcQualityAuthorizationMemory = _settings.Plc.QualityAuthorizationMemory,
             PlcFemalePinMemories = new List<int>(appStation.PlcFemalePinMemories),
             PlcMalePinMemories = new List<int>(appStation.PlcMalePinMemories),
             PlcFemale = _settings.PlcConnector.Female,
@@ -321,23 +326,11 @@ public partial class FrmMain : Form
 
     private void FrmMain_Resize(object? sender, EventArgs e)
     {
-        PositionMasterScanInput();
-
         if (!_systemMinimizedFromMenu || WindowState == FormWindowState.Minimized)
             return;
 
         _systemMinimizedFromMenu = false;
         RestoreStationWindows();
-    }
-
-    private void PositionMasterScanInput()
-    {
-        const int horizontalMargin = 20;
-        const int bottomMargin = 12;
-        _txtScanInput.Left = horizontalMargin;
-        _txtScanInput.Width = Math.Max(100, ClientSize.Width - (horizontalMargin * 2));
-        _txtScanInput.Top = Math.Max(0, ClientSize.Height - _txtScanInput.Height - bottomMargin);
-        _txtScanInput.BringToFront();
     }
 
     private static void MinimizeStationWindow(Form station)
@@ -403,6 +396,102 @@ public partial class FrmMain : Form
 
     private void btnSettings_Click(object sender, EventArgs e)
     {
+        using var settingsForm = new SettingsEditorForm(ResetFromSettingsAsync);
+        settingsForm.ShowDialog(this);
+    }
+
+    private void btnCounters_Click(object sender, EventArgs e)
+    {
+        var counters = new List<StationCountersForm.StationCounterAccess>();
+
+        if (_masterStationPanel is not null)
+        {
+            var snapshot = _masterStationPanel.GetGoodPieceCounterSnapshot();
+            counters.Add(new StationCountersForm.StationCounterAccess(
+                snapshot.StationNumber,
+                snapshot.StationName,
+                _masterStationPanel.GetGoodPieceCounterSnapshot,
+                _masterStationPanel.ResetTotalGoodPieceCounterFromMain,
+                _masterStationPanel.ResetBgGoodPieceCounterFromMain,
+                _masterStationPanel.ResetHourlyGoodPieceCounterFromMain));
+        }
+
+        foreach (var stationForm in _openStations.Where(form => !form.IsDisposed))
+        {
+            var snapshot = stationForm.GetGoodPieceCounterSnapshot();
+            if (snapshot is null || counters.Any(item => item.StationNumber == snapshot.StationNumber))
+                continue;
+
+            counters.Add(new StationCountersForm.StationCounterAccess(
+                snapshot.StationNumber,
+                snapshot.StationName,
+                () => stationForm.GetGoodPieceCounterSnapshot() ?? snapshot,
+                stationForm.ResetTotalGoodPieceCounterFromMain,
+                stationForm.ResetBgGoodPieceCounterFromMain,
+                stationForm.ResetHourlyGoodPieceCounterFromMain));
+        }
+
+        if (counters.Count == 0)
+        {
+            MessageBox.Show(this, "No hay estaciones abiertas.", "Contadores",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        using var form = new StationCountersForm(counters);
+        form.ShowDialog(this);
+    }
+
+    private void btnToggleSelector_Click(object sender, EventArgs e)
+    {
+        var showSelector = !pnlCmb.Visible;
+        label1.Visible = showSelector;
+        pnlCmb.Visible = showSelector;
+        btnToggleSelector.Text = showSelector ? "Ocultar selector" : "Mostrar selector";
+        PerformLayout();
+    }
+
+    private async Task ResetFromSettingsAsync(int? stationNumber)
+    {
+        if (stationNumber.HasValue)
+        {
+            await ResetStationFromMainAsync(stationNumber.Value);
+            return;
+        }
+
+        if (ConfirmReset("¿Reiniciar todas las estaciones?") && _masterStationPanel != null)
+            await _masterStationPanel.ResetAllStationsFromMainAsync();
+    }
+
+    private async Task ResetStationFromMainAsync(int stationNumber)
+    {
+        if (!ConfirmReset($"¿Reiniciar únicamente la estación {stationNumber}?"))
+            return;
+
+        if (stationNumber == MasterStationNumber)
+        {
+            if (_masterStationPanel != null)
+                await _masterStationPanel.ResetStationFromMainAsync();
+            return;
+        }
+
+        var stationForm = _openStations.FirstOrDefault(form =>
+            !form.IsDisposed && form.Tag?.ToString() == stationNumber.ToString());
+
+        if (stationForm == null)
+        {
+            MessageBox.Show(this, $"La estación {stationNumber} no está abierta.", "Reset de estación",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        await stationForm.ResetStationFromMainAsync();
+    }
+
+    private bool ConfirmReset(string message)
+    {
+        return MessageBox.Show(this, message, "Confirmar reset",
+            MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes;
     }
 
     private void _txtScanInput_KeyDown(object? sender, KeyEventArgs e)

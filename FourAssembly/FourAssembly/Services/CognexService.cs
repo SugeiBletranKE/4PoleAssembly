@@ -13,8 +13,11 @@ public static class CognexService
 
     public static void Initialize(string com1, string com2, string com3)
     {
+        _running = true;
         LogService.Log("CognexService.Initialize() starting...");
         SystemEventLogService.LogInfo("COGNEX", "General", "CognexService.Initialize() starting");
+        var availablePorts = SerialPort.GetPortNames().OrderBy(name => name).ToArray();
+        LogService.Log($"Available COM ports: {(availablePorts.Length == 0 ? "NONE" : string.Join(", ", availablePorts))}");
         var portNames = new[] { com1, com2, com3 };
 
         for (int i = 0; i < 3; i++)
@@ -66,6 +69,20 @@ public static class CognexService
         LogService.Log($"[ReadThread-{stationNumber}] Started reader thread");
         SystemEventLogService.LogInfo("SCANNER", $"Station {stationNumber}", $"Started reader thread on {port.PortName}");
         var buffer = new System.Text.StringBuilder();
+        var lastByteReceivedAt = DateTime.MinValue;
+
+        void EmitBufferedData(string completionReason)
+        {
+            var line = buffer.ToString();
+            buffer.Clear();
+
+            if (string.IsNullOrWhiteSpace(line))
+                return;
+
+            LogService.Log($"[ReadThread-{stationNumber}] Complete data ({completionReason}): '{line}'");
+            SystemEventLogService.LogInfo("SCANNER", $"Station {stationNumber}", $"Complete data ({completionReason}): '{line}'");
+            ProcessData(stationNumber, line);
+        }
 
         while (_running && port.IsOpen)
         {
@@ -78,22 +95,25 @@ public static class CognexService
                     // Carriage return (\r = 13) o Line feed (\n = 10)
                     if (byteRead == 13 || byteRead == 10)
                     {
-                        var line = buffer.ToString().Trim();
-                        if (!string.IsNullOrEmpty(line))
-                        {
-                            LogService.Log($"[ReadThread-{stationNumber}] Complete line: '{line}'");
-                            SystemEventLogService.LogInfo("SCANNER", $"Station {stationNumber}", $"Complete line: '{line}'");
-                            ProcessData(stationNumber, line);
-                        }
-                        buffer.Clear();
+                        EmitBufferedData("terminator");
                     }
                     else
                     {
                         buffer.Append((char)byteRead);
+                        lastByteReceivedAt = DateTime.Now;
                     }
                 }
                 else
                 {
+                    // Algunos Cognex no agregan CR/LF. Si dejaron de llegar bytes,
+                    // se considera completa la lectura después de una pausa corta.
+                    if (buffer.Length > 0
+                        && lastByteReceivedAt != DateTime.MinValue
+                        && DateTime.Now - lastByteReceivedAt >= TimeSpan.FromMilliseconds(150))
+                    {
+                        EmitBufferedData("idle timeout");
+                    }
+
                     Thread.Sleep(10);
                 }
             }
@@ -116,7 +136,11 @@ public static class CognexService
     {
         try
         {
-            var data = line.Trim();
+            // Quita espacios/terminadores y los delimitadores STX/ETX que algunos
+            // lectores seriales agregan alrededor del código decodificado.
+            var data = line.Trim()
+                .Trim('\0', '\x02', '\x03')
+                .Trim();
 
             if (string.IsNullOrWhiteSpace(data))
             {
@@ -134,6 +158,14 @@ public static class CognexService
             LogService.LogError($"[ProcessData-{stationNumber}] Error", ex);
             SystemEventLogService.LogError("SCANNER", $"Station {stationNumber}", "Error processing scanner data", ex);
         }
+    }
+
+    public static bool IsStationConnected(int stationNumber)
+    {
+        var index = stationNumber - 1;
+        return index >= 0
+            && index < _ports.Length
+            && _ports[index]?.IsOpen == true;
     }
 
     public static void Stop()

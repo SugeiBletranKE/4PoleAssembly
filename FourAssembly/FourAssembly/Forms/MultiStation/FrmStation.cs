@@ -12,9 +12,6 @@ public partial class FrmStation : Form
     private readonly PlcService _plc;
     private StationPanel? _stationPanel;
     private CurrentProcess? _currentProcess;
-    private Label? _lblStatus;
-    private Label? _lblPartNumber;
-    private Label? _lblProcessState;
 
     public FrmStation(StationSettings config, PlcService plc)
     {
@@ -25,67 +22,25 @@ public partial class FrmStation : Form
         this.Text = config.Name;
         this.WindowState = FormWindowState.Maximized;
 
-        SetupStatusPanel();
         CreateStationPanel();
         SubscribeToEvents();
     }
 
-    private void SetupStatusPanel()
-    {
-        var statusPanel = new Panel
-        {
-            Height = 80,
-            BackColor = Color.DarkGray,
-            Dock = DockStyle.Top
-        };
-
-        _lblPartNumber = new Label
-        {
-            Text = "PartNumber: --",
-            ForeColor = Color.White,
-            Font = new Font("Segoe UI", 20, FontStyle.Bold),
-            Location = new Point(10, 10),
-            AutoSize = true
-        };
-        statusPanel.Controls.Add(_lblPartNumber);
-
-        _lblStatus = new Label
-        {
-            Text = "Status: DISABLED",
-            ForeColor = Color.White,
-            Font = new Font("Segoe UI", 11),
-            Location = new Point(10, 40),
-            AutoSize = true
-        };
-        statusPanel.Controls.Add(_lblStatus);
-
-        _lblProcessState = new Label
-        {
-            Text = "Esperando proceso...",
-            ForeColor = Color.Orange,
-            Font = new Font("Segoe UI", 10),
-            Location = new Point(350, 10),
-            AutoSize = true
-        };
-        statusPanel.Controls.Add(_lblProcessState);
-
-        this.Controls.Add(statusPanel);
-    }
-
     private void CreateStationPanel()
     {
+        lblDesignerHint.Visible = false;
         _stationPanel = new StationPanel(_config, _plc)
         {
             Dock = DockStyle.Fill
         };
-        this.Controls.Add(_stationPanel);
+        stationPanelHost.Controls.Add(_stationPanel);
     }
 
     private void SubscribeToEvents()
     {
         ProcessManager.ProcessStarted += OnProcessStarted;
         ProcessManager.StationStateChanged += OnStationStateChanged;
-        this.FormClosing += FrmStation_FormClosing;
+        FormClosing += FrmStation_FormClosing;
     }
 
     private void OnProcessStarted(CurrentProcess process)
@@ -106,14 +61,14 @@ public partial class FrmStation : Form
     {
         if (_currentProcess == null)
         {
-            _lblPartNumber!.Text = "PartNumber: --";
-            _lblStatus!.Text = "Status: --";
-            _lblProcessState!.Text = "Esperando...";
+            _lblPartNumber.Text = "PartNumber: --";
+            _lblStatus.Text = "Status: --";
+            _lblProcessState.Text = "Esperando...";
             return;
         }
 
-        _lblPartNumber!.Text = $"PartNumber: {_currentProcess.PartNumber}";
-        _lblStatus!.Text = $"Status: {_currentProcess.Description}";
+        _lblPartNumber.Text = $"PartNumber: {_currentProcess.PartNumber}";
+        _lblStatus.Text = $"Description: {_currentProcess.Description}";
 
         var stationCode = _config.StationNumber.ToString();
         var state = ProcessManager.GetStationState(stationCode);
@@ -142,8 +97,8 @@ public partial class FrmStation : Form
             _ => "•"
         };
 
-        _lblProcessState!.Text = $"{stateIcon} {state}";
-        _lblProcessState!.ForeColor = stateColor;
+        _lblProcessState.Text = $"{stateIcon} {state}";
+        _lblProcessState.ForeColor = stateColor;
     }
 
     private void FrmStation_FormClosing(object? sender, FormClosingEventArgs e)
@@ -167,4 +122,24 @@ public partial class FrmStation : Form
     {
         _stationPanel?.StartCableScan();
     }
+
+    public Task ResetStationFromMainAsync()
+    {
+        return _stationPanel?.ResetStationFromMainAsync() ?? Task.CompletedTask;
+    }
+
+    public StationPanel.GoodPieceCounterSnapshot? GetGoodPieceCounterSnapshot() =>
+        _stationPanel?.GetGoodPieceCounterSnapshot();
+
+    public void ResetGoodPieceCountersFromMain() =>
+        _stationPanel?.ResetGoodPieceCountersFromMain();
+
+    public void ResetTotalGoodPieceCounterFromMain() =>
+        _stationPanel?.ResetTotalGoodPieceCounterFromMain();
+
+    public void ResetBgGoodPieceCounterFromMain() =>
+        _stationPanel?.ResetBgGoodPieceCounterFromMain();
+
+    public void ResetHourlyGoodPieceCounterFromMain() =>
+        _stationPanel?.ResetHourlyGoodPieceCounterFromMain();
 }

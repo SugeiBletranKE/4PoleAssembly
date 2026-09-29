@@ -8,8 +8,12 @@ using System.Text.Json.Serialization;
 
 public static class StationInfoApiService
 {
+    // TEMPORAL: validacion adicional mientras MES revisa la ruta de 4 polos.
+    // Para retirarla, elimina esta constante y el bloque TEMPORAL dentro de ReviewSingleSerialAsync.
+    private const string TemporaryPrecheckStation = "6301021370";
     private static string _apiUrl = "http://172.16.47.4:8088/main/system/webdev/Core/odc/CheckSingleSerial";
     private static string _singleSerialApiUrl = _apiUrl;
+    private static string _bookSingleSerialApiUrl = "http://172.16.47.4:8088/main/system/webdev/Core/odc/BookSingleSerial";
     private static readonly HttpClient _httpClient = new();
     private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -18,6 +22,7 @@ public static class StationInfoApiService
 
     public static bool IsConfigured => !string.IsNullOrWhiteSpace(_apiUrl);
     public static bool IsSingleSerialConfigured => !string.IsNullOrWhiteSpace(_singleSerialApiUrl);
+    public static bool IsBookSingleSerialConfigured => !string.IsNullOrWhiteSpace(_bookSingleSerialApiUrl);
 
     public static void Initialize(ApiConfig config)
     {
@@ -27,6 +32,9 @@ public static class StationInfoApiService
         _singleSerialApiUrl = string.IsNullOrWhiteSpace(config.SingleSerialUrl)
             ? _apiUrl
             : config.SingleSerialUrl.Trim();
+
+        if (!string.IsNullOrWhiteSpace(config.BookSingleSerialUrl))
+            _bookSingleSerialApiUrl = config.BookSingleSerialUrl.Trim();
     }
 
     // Metodo anterior por lote. Se conserva como respaldo; el flujo principal usa ReviewSerialsIndividuallyAsync.
@@ -142,16 +150,35 @@ public static class StationInfoApiService
         }
 
         var success = rejectedSerials.Count == 0;
+        var failedResults = serialResults.Where(result => !result.Success).ToList();
+        var firstFailure = failedResults.FirstOrDefault();
+        var realResultText = string.Join(
+            " | ",
+            failedResults
+                .Select(result => !string.IsNullOrWhiteSpace(result.ResultText)
+                    ? result.ResultText.Trim()
+                    : result.Message.Trim())
+                .Where(text => !string.IsNullOrWhiteSpace(text))
+                .Distinct(StringComparer.OrdinalIgnoreCase));
+        var realErrorMessage = string.Join(
+            " | ",
+            failedResults
+                .Select(result => failedResults.Count == 1
+                    ? result.Message.Trim()
+                    : $"{result.SerialNumber}: {result.Message.Trim()}")
+                .Where(message => !string.IsNullOrWhiteSpace(message)));
+
         return new StationInfoApiResult
         {
             Success = success,
-            ResultCode = success ? 0 : 1,
-            ResultText = success ? "OK" : "Seriales con pasos faltantes",
+            StatusCode = success ? 200 : firstFailure?.StatusCode,
+            ResultCode = success ? 0 : firstFailure?.ResultCode,
+            ResultText = success ? "OK" : realResultText,
             RejectedSerialNumbers = rejectedSerials,
             SerialResults = serialResults,
             Message = success
                 ? "Todos los seriales fueron revisados correctamente."
-                : $"Seriales rechazados: {string.Join(", ", rejectedSerials)}",
+                : realErrorMessage,
             ResponseBody = string.Join(Environment.NewLine, responseBodies)
         };
     }
@@ -162,7 +189,30 @@ public static class StationInfoApiService
         string serial,
         CancellationToken cancellationToken)
     {
-        var request = new StationInfoSingleSerialApiRequest
+        // TEMPORAL: primero valida el serial contra la estacion fija 6301021370.
+        // Solo cuando esta validacion responde RESULT_CODE=0 se ejecuta el CHECK normal.
+        var temporaryRequest = CreateSingleSerialRequest(
+            TemporaryPrecheckStation,
+            partNumber,
+            serial,
+            state: 0);
+        var temporaryLogRequest = new StationInfoApiRequest
+        {
+            Station = TemporaryPrecheckStation,
+            PartNumber = partNumber,
+            SerialNumbers = [serial]
+        };
+        var temporaryResult = await SendSingleSerialRequestAsync(
+            "CHECK_TEMP",
+            _singleSerialApiUrl,
+            temporaryRequest,
+            temporaryLogRequest,
+            cancellationToken);
+
+        if (!temporaryResult.Success)
+            return temporaryResult;
+
+        var checkRequest = new StationInfoSingleSerialApiRequest
         {
             SerialNumber = serial,
             State = 0,
@@ -171,28 +221,116 @@ public static class StationInfoApiService
             FailureCode = string.Empty,
             Data = []
         };
-        var logRequest = new StationInfoApiRequest
+        var checkLogRequest = new StationInfoApiRequest
         {
             Station = station,
             PartNumber = partNumber,
             SerialNumbers = [serial]
         };
+        var checkResult = await SendSingleSerialRequestAsync(
+            "CHECK",
+            _singleSerialApiUrl,
+            checkRequest,
+            checkLogRequest,
+            cancellationToken);
+
+        if (!checkResult.Success)
+            return checkResult;
+
+        return checkResult;
+    }
+
+    private static StationInfoSingleSerialApiRequest CreateSingleSerialRequest(
+        string station,
+        string partNumber,
+        string serial,
+        int state)
+    {
+        return new StationInfoSingleSerialApiRequest
+        {
+            SerialNumber = serial,
+            State = state,
+            PartNumber = partNumber,
+            Station = station,
+            FailureCode = string.Empty,
+            Data = []
+        };
+    }
+
+    public static async Task<StationInfoApiResult> BookSingleSerialAsync(
+        string station,
+        string partNumber,
+        string serial,
+        int state,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsBookSingleSerialConfigured)
+        {
+            return new StationInfoApiResult
+            {
+                Success = false,
+                Message = "Configura el URL de booking en settings.json: Api.BookSingleSerialUrl."
+            };
+        }
+
+        var bookRequest = new StationInfoSingleSerialApiRequest
+        {
+            SerialNumber = serial,
+            State = state,
+            PartNumber = partNumber,
+            Station = station,
+            FailureCode = string.Empty,
+            Data = []
+        };
+        var bookLogRequest = new StationInfoApiRequest
+        {
+            Station = station,
+            PartNumber = partNumber,
+            SerialNumbers = [serial]
+        };
+        var bookResult = await SendSingleSerialRequestAsync(
+            "BOOK",
+            _bookSingleSerialApiUrl,
+            bookRequest,
+            bookLogRequest,
+            cancellationToken);
+
+        return new StationInfoApiResult
+        {
+            Success = bookResult.Success,
+            StatusCode = bookResult.StatusCode,
+            ResultCode = bookResult.ResultCode,
+            ResultText = bookResult.ResultText,
+            RejectedSerialNumbers = bookResult.Success ? [] : [serial],
+            SerialResults = [bookResult],
+            Message = bookResult.Message,
+            ResponseBody = bookResult.ResponseBody
+        };
+    }
+
+    private static async Task<StationInfoSerialReview> SendSingleSerialRequestAsync(
+        string operation,
+        string url,
+        StationInfoSingleSerialApiRequest request,
+        StationInfoApiRequest logRequest,
+        CancellationToken cancellationToken)
+    {
         var json = JsonSerializer.Serialize(request, _jsonOptions);
         var stopwatch = Stopwatch.StartNew();
 
         try
         {
             using var content = new StringContent(json, Encoding.UTF8, "application/json");
-            using var response = await _httpClient.PostAsync(_singleSerialApiUrl, content, cancellationToken);
+            using var response = await _httpClient.PostAsync(url, content, cancellationToken);
             var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
             var apiResponse = ParseApiResponse(responseBody);
             var success = response.IsSuccessStatusCode
-                && (!apiResponse.ResultCode.HasValue || apiResponse.ResultCode.Value == 0);
+                && apiResponse.ResultCode == 0;
             stopwatch.Stop();
 
             LogApiOperation(
-                "CHECK",
-                _singleSerialApiUrl,
+                operation,
+                url,
                 logRequest,
                 json,
                 (int)response.StatusCode,
@@ -205,7 +343,7 @@ public static class StationInfoApiService
 
             return new StationInfoSerialReview
             {
-                SerialNumber = serial,
+                SerialNumber = request.SerialNumber,
                 Success = success,
                 StatusCode = (int)response.StatusCode,
                 ResultCode = apiResponse.ResultCode,
@@ -218,8 +356,8 @@ public static class StationInfoApiService
         {
             stopwatch.Stop();
             LogApiOperation(
-                "CHECK",
-                _singleSerialApiUrl,
+                operation,
+                url,
                 logRequest,
                 json,
                 null,
@@ -230,12 +368,12 @@ public static class StationInfoApiService
                 ex.Message,
                 stopwatch.ElapsedMilliseconds);
 
-            LogService.LogError($"Station info API serial review failed for {serial}", ex);
+            LogService.LogError($"Station info API {operation.ToLowerInvariant()} failed for {request.SerialNumber}", ex);
             return new StationInfoSerialReview
             {
-                SerialNumber = serial,
+                SerialNumber = request.SerialNumber,
                 Success = false,
-                Message = $"Error consultando API para {serial}: {ex.Message}"
+                Message = $"Error en {operation} para {request.SerialNumber}: {ex.Message}"
             };
         }
     }

@@ -1,5 +1,6 @@
 namespace FourAssembly.MultiStation.Controls;
 
+using FourAssembly.Forms;
 using FourAssembly.Models;
 using FourAssembly.MultiStation.Models;
 using FourAssembly.MultiStation.Services;
@@ -28,11 +29,21 @@ public partial class StationPanel : UserControl
     private int _cableCount = 0;
     private int _totalScannedCount = 0;
     private int _totalScrapCount = 0;
+    private int _goodPieceCount = 0;
+    private int _bgGoodPieceCount = 0;
+    private string _goodPieceBg = string.Empty;
+    private int _hourlyGoodPieceCount = 0;
+    private DateTime _hourlyCounterStart = GetHourStart(DateTime.Now);
+    private string _goodPiecePartNumber = string.Empty;
+    private readonly HashSet<string> _countedGoodSerials = new(StringComparer.OrdinalIgnoreCase);
     private bool _apiApproved = false;
     private bool _waitingRejectedCableRemoval = false;
     private bool _rejectedCableRemovalPending = false;
     private bool _operatorActionInProgress = false;
     private bool _cognexSerialReviewInProgress = false;
+    private string _pendingBookingSerial = string.Empty;
+    private int? _completedBookingState = null;
+    private bool _bookingInProgress = false;
     private bool _plcCounterSent = false;
     private DateTime _cognexReadBlockedUntil = DateTime.MinValue;
     private bool _lastOperatorButtonSignal = false;
@@ -44,6 +55,12 @@ public partial class StationPanel : UserControl
     private string _toolValidatedPartNumber = string.Empty;
     private bool _zebraReleasedForActivePartNumber = false;
     private bool _bgMismatchActive = false;
+    private bool _cognexAdminLocked = false;
+    private bool _adminUnlockDialogOpen = false;
+    private bool _adminLockRequiresRejectedRemoval = false;
+    private bool _adminLockRequiresPlcQualityPulse = false;
+    private string _adminLockCode = string.Empty;
+    private string _adminLockMessage = string.Empty;
     private StationProcessState _processStateBeforeMaterialSensorRecheck = StationProcessState.DISABLED;
     private ZebraValidationStep _zebraStepBeforeMaterialSensorRecheck = ZebraValidationStep.STATION;
     private readonly System.Windows.Forms.Timer _operatorButtonPollTimer = new();
@@ -59,10 +76,11 @@ public partial class StationPanel : UserControl
         _stationCode = config.StationNumber.ToString();
 
         InitializeComponent();
+        pnlMasterStatus.Visible = _config.StationNumber == 3;
         _lblStation.Text = _config.Name;
-        _lblCableCount.BringToFront();
         _lblScrapCount.BringToFront();
         _lblInsertedCount.BringToFront();
+        _btnAdminRecoveryReset.BringToFront();
         lblInfo.Visible = true;
         lblInfo.BringToFront();
 
@@ -86,7 +104,8 @@ public partial class StationPanel : UserControl
         // Si no hay ninguna memoria para monitorear, no se activa el timer.
         if (_config.PlcButton <= 0
             && _config.PlcCounterCompleteMemory <= 0
-            && _config.PlcMaterialRemovedMemory <= 0)
+            && _config.PlcMaterialRemovedMemory <= 0
+            && _config.PlcCavityErrorMemory <= 0)
             return;
 
         // Revisa la bobina del boton cada 100 ms para detectar cuando el operador lo presiona.
@@ -145,6 +164,8 @@ public partial class StationPanel : UserControl
             }
 
             await CheckMaterialRemovedSignalAsync();
+            EnsureCurrentGoodPieceHour();
+            await CheckCavityErrorSignalAsync();
             await CheckPlcCounterCompleteSignalAsync();
             await UpdateInsertedCountFromPlcAsync();
         }
@@ -152,6 +173,44 @@ public partial class StationPanel : UserControl
         {
             _operatorButtonPollInProgress = false;
         }
+    }
+
+    private async Task CheckCavityErrorSignalAsync()
+    {
+        if (_config.PlcCavityErrorMemory <= 0 || _config.PlcCavityErrorRegister <= 0)
+            return;
+
+        var errorActive = await Task.Run(() => _plc.ReadCoil(_config.PlcCavityErrorMemory));
+        if (!_plc.IsConnected || !errorActive || _cognexAdminLocked || _adminUnlockDialogOpen)
+            return;
+
+        var detailValue = await Task.Run(() => _plc.ReadHoldingRegister(_config.PlcCavityErrorRegister));
+        var detail = detailValue is >= 1 and <= 4
+            ? $"Cavidad {detailValue}"
+            : "Valor no reconocido";
+        var message = detailValue is >= 1 and <= 4
+            ? $"Inserción incorrecta en cavidad {detailValue}."
+            : $"Cavidad incorrecta. Detalle PLC D{_config.PlcCavityErrorRegister}={detailValue}.";
+
+        _cognexAdminLocked = true;
+        _adminLockCode = "PLC_CAVITY_ERROR";
+        _adminLockMessage = message;
+        _adminLockRequiresRejectedRemoval = false;
+        _adminLockRequiresPlcQualityPulse = true;
+        LogService.Log($"[Station {_stationCode}] PLC cavity error active. M{_config.PlcCavityErrorMemory}=1, D{_config.PlcCavityErrorRegister}={detailValue} ({detail})");
+        SystemEventLogService.LogError("PLC_CAVITY_ERROR", $"Station {_stationCode}", message);
+        if (string.IsNullOrWhiteSpace(_pendingBookingSerial))
+        {
+            LogService.Log($"[Station {_stationCode}] Cavity error occurred without a pending Cognex serial. Scrap booking skipped.");
+        }
+        else
+        {
+            var scrapBooking = await BookPendingSerialAsync(2);
+            if (!scrapBooking)
+                _adminLockMessage = $"{message} No fue posible registrar el scrap en MES.";
+        }
+        UpdateUI();
+        ShowAdminUnlockDialog();
     }
 
     private async Task CheckMaterialRemovedSignalAsync()
@@ -187,20 +246,32 @@ public partial class StationPanel : UserControl
 
     private async Task CheckPlcCounterCompleteSignalAsync()
     {
+        if (_config.PlcCounterCompleteMemory <= 0
+            || _materialSensorRecheckInProgress
+            || _waitingForMaterialBoxInsertion
+            || _cognexAdminLocked)
+            return;
+
+        var signal = await Task.Run(() => _plc.ReadCoil(_config.PlcCounterCompleteMemory));
+        if (!_plc.IsConnected)
+            return;
+
+        // Solo se procesa N=N después de haber enviado el lote al PLC.
         if (!_plcCounterSent
             || _processState != StationProcessState.COGNEX_DONE
-            || _config.PlcCounterCompleteMemory <= 0
-            || _materialSensorRecheckInProgress
-            || _waitingForMaterialBoxInsertion)
+            || !signal)
             return;
 
-        // Cambio solicitado: la estacion solo se bloquea cuando PLC confirma N=N en M44/M49/M54.
-        var signal = await Task.Run(() => _plc.ReadCoil(_config.PlcCounterCompleteMemory));
-        if (!_plc.IsConnected || !signal)
-            return;
-
+        // La estación solo completa cuando PLC confirma un nuevo N=N en M44/M49/M54.
         LogService.Log($"[Station {_stationCode}] PLC counter complete signal received on M{_config.PlcCounterCompleteMemory}");
+        if (!_completedBookingState.HasValue && !await BookPendingSerialAsync(0))
+            return;
+
+        if (!await ResetCableInsertionOutputsAsync())
+            return;
+
         RestartStationAfterCounterComplete();
+        await SetYellowButtonAsync(active: true, "N=N");
         ProcessManager.RestartStationCognexActive(_stationCode);
         CognexFlowService.StartCognexAtStation(_stationCode);
         UpdateUI();
@@ -234,15 +305,16 @@ public partial class StationPanel : UserControl
         _rejectedCableRemovalPending = false;
         _operatorActionInProgress = false;
         _cognexSerialReviewInProgress = false;
+        _pendingBookingSerial = string.Empty;
+        _completedBookingState = null;
+        _bookingInProgress = false;
         _materialSensorRecheckInProgress = false;
         _waitingForMaterialBoxInsertion = false;
         _plcCounterSent = false;
         _cognexReadBlockedUntil = DateTime.MinValue;
         _lstCables.Items.Clear();
-        UpdateTotalScannedCountLabel();
         UpdateTotalScrapCountLabel();
         UpdateInsertedCountLabel(0);
-        _btnReviewApi.Enabled = false;
         _txtApiInfo.Clear();
         SetScrapVisualState(false);
         _txtScanInput.Clear();
@@ -259,6 +331,12 @@ public partial class StationPanel : UserControl
             StringComparison.OrdinalIgnoreCase);
 
         _currentProcess = process;
+        UpdateMasterStatusPanel();
+
+        _goodPiecePartNumber = process.PartNumber;
+
+        if (partNumberChanged)
+            _ = SetYellowButtonAsync(active: false, "part number change");
 
         if (partNumberChanged)
         {
@@ -283,6 +361,7 @@ public partial class StationPanel : UserControl
         {
             _stationConfig = config;
             lblBG.Text = _stationConfig.BG;
+            SetGoodPieceBg(_stationConfig.BG);
         }
 
         _scannedCables.Clear();
@@ -290,6 +369,9 @@ public partial class StationPanel : UserControl
         _blockedRejectedCables.Clear();
         _cableCount = 0;
         _apiApproved = false;
+        _pendingBookingSerial = string.Empty;
+        _completedBookingState = null;
+        _bookingInProgress = false;
         _waitingRejectedCableRemoval = false;
         _rejectedCableRemovalPending = false;
         _plcCounterSent = false;
@@ -299,7 +381,6 @@ public partial class StationPanel : UserControl
         _cognexReadBlockedUntil = DateTime.MinValue;
         _lstCables.Items.Clear();
         _txtApiInfo.Clear();
-        _btnReviewApi.Enabled = false;
         SetScrapVisualState(false);
 
         UpdateUI();
@@ -316,6 +397,7 @@ public partial class StationPanel : UserControl
         }
 
         _processState = newState;
+        UpdateMasterStatusPanel();
         UpdateUI();
     }
 
@@ -340,6 +422,8 @@ public partial class StationPanel : UserControl
 
     private async Task ResetConfiguredBgPinRegistersAsync()
     {
+        await SetYellowButtonAsync(active: false, "reset");
+
         var registers = _config.PlcFemalePinMemories
             .Concat(_config.PlcMalePinMemories)
             .Where(register => register > 0)
@@ -356,6 +440,17 @@ public partial class StationPanel : UserControl
             }
 
             LogService.Log($"[Station {_stationCode}] Failed to reset BG pin register D{register}");
+        }
+    }
+
+    private async Task SetYellowButtonAsync(bool active, string reason)
+    {
+        if (_config.PlcBtnYellow > 0)
+        {
+            var yellowOk = await Task.Run(() => _plc.WriteCoil(_config.PlcBtnYellow, active));
+            LogService.Log(yellowOk
+                ? $"[Station {_stationCode}] Button yellow M{_config.PlcBtnYellow} = {active} ({reason})"
+                : $"[Station {_stationCode}] Failed button yellow M{_config.PlcBtnYellow} = {active} ({reason})");
         }
     }
 
@@ -561,7 +656,19 @@ public partial class StationPanel : UserControl
         _waitingForMaterialBoxInsertion = false;
         _processState = _processStateBeforeMaterialSensorRecheck;
         _zebraStep = _zebraStepBeforeMaterialSensorRecheck;
-        LogService.Log($"[Station {_stationCode}] Housing re-scan completed after sensor signal");
+
+        // Si la caja se retiró durante Cognex, se reactiva explícitamente el
+        // flujo compartido además de restaurar el estado local del panel.
+        if (_processState == StationProcessState.COGNEX_ACTIVE)
+        {
+            ProcessManager.RestartStationCognexActive(_stationCode);
+            CognexFlowService.StartCognexAtStation(_stationCode);
+        }
+
+        LogService.Log(
+            $"[Station {_stationCode}] Housing re-scan completed after sensor signal. " +
+            $"RestoredState={_processState}, CognexActive={CognexFlowService.IsCognexActiveAtStation(_stationCode)}, " +
+            $"AdminLocked={_cognexAdminLocked}, ApiReviewInProgress={_cognexSerialReviewInProgress}");
         ShowSuccess("Housing validado.");
         UpdateUI();
     }
@@ -630,13 +737,18 @@ public partial class StationPanel : UserControl
 
     private bool CanRequestHousingFromMaterialSensor()
     {
-        // Una vez liberado Zebra para el PN activo, la memoria de la caja debe
-        // vigilarse durante todo el proceso: Cognex, espera de N=N y batches
-        // posteriores. Solo el cambio de PN desactiva esta vigilancia hasta
-        // completar nuevamente la validacion Zebra.
-        return _zebraReleasedForActivePartNumber
-            && _currentProcess != null
-            && IsHousingEnabled();
+        if (_currentProcess == null || !IsHousingEnabled())
+            return false;
+
+        // Durante la liberacion Zebra inicial tambien se debe vigilar la caja.
+        // Asi, al insertarla mientras el paso HOUSING esta esperando, la pantalla
+        // cambia inmediatamente de "Insertar caja" a "Escanear Housing".
+        var waitingInitialHousingScan = _processState == StationProcessState.ZEBRA_IN_PROGRESS
+            && _zebraStep == ZebraValidationStep.HOUSING;
+
+        // Despues de liberar Zebra, la memoria continua vigilada durante Cognex,
+        // la espera de N=N y los batches posteriores.
+        return waitingInitialHousingScan || _zebraReleasedForActivePartNumber;
     }
 
     private bool IsMaterialBoxMissing()
@@ -692,12 +804,21 @@ public partial class StationPanel : UserControl
     {
         var expectedHousing = GetExpectedHousingBarcode();
         if (string.IsNullOrWhiteSpace(expectedHousing))
+        {
+            LogService.Log($"[Station {_stationCode}] Housing validation skipped because recipe Housing is empty");
             return true;
+        }
 
         var scanned = NormalizeHousingCode(barcode);
         var expected = NormalizeHousingCode(expectedHousing);
-        return !string.IsNullOrWhiteSpace(expected)
+        var isValid = !string.IsNullOrWhiteSpace(expected)
             && scanned.Contains(expected, StringComparison.OrdinalIgnoreCase);
+
+        LogService.Log(
+            $"[Station {_stationCode}] Housing validation: " +
+            $"valid={isValid}, rawLength={barcode.Length}, expected='{expected}', " +
+            $"normalizedScan='{scanned}'");
+        return isValid;
     }
 
     private static string NormalizeHousingCode(string value)
@@ -776,6 +897,12 @@ public partial class StationPanel : UserControl
 
     private async Task ProcessCognexDataAsync(string data)
     {
+        if (_cognexAdminLocked)
+        {
+            LogService.Log($"[Station {_stationCode}] Cognex data ignored while admin lock is active: {data}");
+            return;
+        }
+
         if (_processState != StationProcessState.COGNEX_ACTIVE)
         {
             LogService.Log($"[Station {_stationCode}] Cognex data ignored because state is {_processState}");
@@ -834,10 +961,11 @@ public partial class StationPanel : UserControl
         }
 
         _scannedCables.Add(data);
+        _pendingBookingSerial = data;
+        _completedBookingState = null;
         _totalScannedCount++;
         _lstCables.Items.Add(CreateCableListItem(data));
         RefreshCableCount();
-        UpdateTotalScannedCountLabel();
         _apiApproved = false;
         _waitingRejectedCableRemoval = false;
         _rejectedCableRemovalPending = false;
@@ -865,7 +993,10 @@ public partial class StationPanel : UserControl
 
         SetBgMismatchState(true);
         LogService.Log($"[Station {_stationCode}] Cognex BG mismatch. Expected serial ending BG={expectedBg}, serial={serial}");
-        ShowError($"BG Cognex incorrecto. El serial debe terminar en: {expectedBg}");
+        LockForCognexAdmin(
+            "COGNEX_BG_MISMATCH",
+            $"BG Cognex incorrecto. El serial debe terminar en: {expectedBg}",
+            requiresRejectedRemoval: false);
         return false;
     }
 
@@ -879,36 +1010,52 @@ public partial class StationPanel : UserControl
         };
 
         var requestJson = JsonSerializer.Serialize(request, _apiInfoJsonOptions);
-        ShowApiInfo($"REQUEST{Environment.NewLine}{requestJson}");
-        _btnReviewApi.Enabled = false;
+        ShowApiInfo(string.Empty);
         _cognexSerialReviewInProgress = true;
+        // Mientras MES revisa la lectura de Cognex, bloquea la accion del boton
+        // para evitar que una pulsacion coincida con la liberacion automatica.
+        _operatorActionInProgress = true;
 
         try
         {
             var result = await StationInfoApiService.ReviewSerialsIndividuallyAsync(request);
-            ShowApiResult(requestJson, result);
+            ShowApiResult(result);
             LogService.Log($"[Station {_stationCode}] API single serial response serial={serial} success={result.Success} resultCode={result.ResultCode?.ToString() ?? "N/A"} resultText={result.ResultText}: {result.ResponseBody}");
             LogMesPieceReview(serial, result);
 
             if (result.Success)
             {
                 _apiApproved = true;
-                MarkCableAsOk(serial);
-                ShowSuccess($"API OK: {serial}");
+                ShowSuccess($"CHECK OK: {serial}. Liberando PLC...");
+                LogService.Log($"[Station {_stationCode}] MES approved Cognex serial. Starting automatic PLC release without operator button. Serial={serial}");
+                await FinalizeStationCycleAsync();
                 return;
             }
 
             _apiApproved = false;
-            var rejectedSerials = result.RejectedSerialNumbers.Count > 0
-                ? result.RejectedSerialNumbers
-                : [serial];
+            var rejectedSerials = GetConfirmedMesRejectedSerials(result);
+            if (rejectedSerials.Count == 0)
+            {
+                ShowError($"No se pudo confirmar la pieza con MES. Se requiere autorización para liberar. {result.Message}");
+                LogService.Log($"[Station {_stationCode}] MES technical/unconfirmed failure. Scrap not incremented. Serial={serial}, Message={result.Message}");
+                LockForCognexAdmin(
+                    "MES_TECHNICAL_ERROR",
+                    string.IsNullOrWhiteSpace(result.Message) ? "No fue posible confirmar la pieza con MES." : result.Message,
+                    requiresRejectedRemoval: false);
+                return;
+            }
+
             BeginRejectedCableRemoval(rejectedSerials);
             ShowError(result.Message);
+            LockForCognexAdmin(
+                "API_REJECTED",
+                string.IsNullOrWhiteSpace(result.Message) ? "La API rechazo el serial." : result.Message,
+                requiresRejectedRemoval: true);
         }
         finally
         {
             _cognexSerialReviewInProgress = false;
-            _btnReviewApi.Enabled = CanReviewApi();
+            _operatorActionInProgress = false;
             UpdateUI();
         }
     }
@@ -917,6 +1064,13 @@ public partial class StationPanel : UserControl
     {
         var serialResult = result.SerialResults.FirstOrDefault(r =>
             string.Equals(r.SerialNumber, serial, StringComparison.OrdinalIgnoreCase));
+        var isConfirmedScrap = GetConfirmedMesRejectedSerials(result)
+            .Contains(serial, StringComparer.OrdinalIgnoreCase);
+        var classification = result.Success
+            ? "OK"
+            : isConfirmedScrap
+                ? "SCRAP"
+                : "API_ERROR";
 
         // Cambio solicitado: guardar trazabilidad MES de cada pieza revisada por Cognex/API.
         MesPieceLogService.LogPieceReview(new MesPieceLogEntry
@@ -926,12 +1080,77 @@ public partial class StationPanel : UserControl
             SerialNumber = serial,
             CableCount = _cableCount,
             Success = result.Success,
+            IsScrap = isConfirmedScrap,
+            Classification = classification,
             StatusCode = serialResult?.StatusCode ?? result.StatusCode,
             ResultCode = serialResult?.ResultCode ?? result.ResultCode,
             ResultText = serialResult?.ResultText ?? result.ResultText,
             Message = serialResult?.Message ?? result.Message,
             ResponseBody = serialResult?.ResponseBody ?? result.ResponseBody
         });
+    }
+
+    private async Task<bool> BookPendingSerialAsync(int state)
+    {
+        if (_completedBookingState.HasValue)
+            return _completedBookingState.Value == state;
+
+        if (_bookingInProgress || string.IsNullOrWhiteSpace(_pendingBookingSerial))
+            return false;
+
+        var serial = _pendingBookingSerial;
+        _bookingInProgress = true;
+        try
+        {
+            var result = await StationInfoApiService.BookSingleSerialAsync(
+                GetApiStationNumber(),
+                GetRecipePartNumber(),
+                serial,
+                state);
+
+            ShowApiResult(result);
+            LogService.Log(
+                $"[Station {_stationCode}] BOOK response serial={serial}, state={state}, " +
+                $"success={result.Success}, resultCode={result.ResultCode?.ToString() ?? "N/A"}, " +
+                $"resultText={result.ResultText}: {result.ResponseBody}");
+
+            if (!result.Success)
+            {
+                ShowError($"No se pudo registrar el booking del serial {serial}. {result.Message}");
+                if (state == 0 && !_cognexAdminLocked)
+                {
+                    _cognexAdminLocked = true;
+                    _adminLockCode = "BOOKING_ERROR";
+                    _adminLockMessage = $"No se pudo registrar el serial {serial} en MES. Autoriza para liberar manualmente.";
+                    _adminLockRequiresRejectedRemoval = false;
+                    _adminLockRequiresPlcQualityPulse = false;
+                    UpdateUI();
+                    ShowAdminUnlockDialog();
+                }
+                return false;
+            }
+
+            _completedBookingState = state;
+            if (state == 0)
+            {
+                CountGoodPieces([serial]);
+                MarkCableAsOk(serial);
+                ShowSuccess($"BOOK OK: {serial}.");
+            }
+            else
+            {
+                _totalScrapCount++;
+                UpdateTotalScrapCountLabel();
+                ShowError($"SCRAP registrado en MES: {serial}.");
+            }
+
+            return true;
+        }
+        finally
+        {
+            _bookingInProgress = false;
+            UpdateUI();
+        }
     }
 
     private async Task FinalizeStationCycleAsync()
@@ -959,6 +1178,18 @@ public partial class StationPanel : UserControl
     {
         // Punto central del boton: aqui entran tanto el boton fisico del PLC
         // como los botones de pantalla Review API y Finalize.
+        LogService.Log(
+            $"[Station {_stationCode}] Operator action state: " +
+            $"ProcessState={_processState}, ApiApproved={_apiApproved}, CableCount={_cableCount}, " +
+            $"PlcCounterSent={_plcCounterSent}, AdminLocked={_cognexAdminLocked}, " +
+            $"WaitingRejectedRemoval={_waitingRejectedCableRemoval}, ActionInProgress={_operatorActionInProgress}");
+
+        if (_cognexAdminLocked)
+        {
+            ShowAdminUnlockDialog();
+            return;
+        }
+
         if (_operatorActionInProgress)
             return;
 
@@ -1016,12 +1247,12 @@ public partial class StationPanel : UserControl
             return;
         }
 
-        // Cambio solicitado: al presionar el boton final, se prende M61/M62/M63 para avisar que se mando la cantidad.
+        // M61/M62/M63 y M55/M56/M57 son comandos de liberación para el PLC.
         if (!await WritePlcMemoryAsync(_config.PlcQuantityProcessMemory, true, "proceso con cantidad"))
             return;
 
-        // Cambio solicitado: se manda M55/M56/M57, pero la estacion NO se marca DONE hasta leer M44/M49/M54.
-        if (!await WritePlcMemoryAsync(_config.PlcFinalProcessMemory, true, "proceso final"))
+        // PlcFinalProcessMemory usa polaridad inversa: OFF libera el pistón.
+        if (!await WritePlcMemoryAsync(_config.PlcFinalProcessMemory, false, "abrir pistón para insertar"))
             return;
 
         _plcCounterSent = true;
@@ -1056,9 +1287,7 @@ public partial class StationPanel : UserControl
     {
         if (_config.PlcActiveStationRegister > 0)
         {
-            var plcStationValue = _config.PlcStation > 0
-                ? _config.PlcStation
-                : _config.StationNumber;
+            const int plcStationValue = 1;
             bool activeStationOk = await Task.Run(() =>
                 _plc.WriteHoldingRegister(_config.PlcActiveStationRegister, plcStationValue));
 
@@ -1163,6 +1392,7 @@ public partial class StationPanel : UserControl
 
     private void UpdateUI()
     {
+        UpdateMasterStatusPanel();
         var statusText = $"{_lblStation.Text} | {_processState}";
 
         switch (_processState)
@@ -1174,7 +1404,7 @@ public partial class StationPanel : UserControl
 
             case StationProcessState.WAITING_ZEBRA:
                 lblInfo.Text = $"En espera... Escanea {_stationConfig?.Code} para liberar Zebra";
-                    lblInfo.ForeColor = Color.Orange;
+                lblInfo.ForeColor = Color.Orange;
                 break;
 
             case StationProcessState.ZEBRA_IN_PROGRESS:
@@ -1201,7 +1431,12 @@ public partial class StationPanel : UserControl
                 break;
 
             case StationProcessState.COGNEX_ACTIVE:
-                if (_waitingRejectedCableRemoval)
+                if (!CognexService.IsStationConnected(_config.StationNumber))
+                {
+                    lblInfo.Text = $"Cognex no conectado. Revisar {_config.ComPort} en Settings.";
+                    lblInfo.ForeColor = Color.Red;
+                }
+                else if (_waitingRejectedCableRemoval)
                 {
                     lblInfo.Text = GetRejectedCableInstruction();
                     lblInfo.ForeColor = Color.Red;
@@ -1218,7 +1453,7 @@ public partial class StationPanel : UserControl
                 }
                 else
                 {
-                    lblInfo.Text = $"Cognex activo - {_cableCount} cables. Revisar API.";
+                    lblInfo.Text = $"Escanear piezas. Activo - {_cableCount} cables.";
                     lblInfo.ForeColor = Color.Green;
                 }
                 break;
@@ -1260,8 +1495,18 @@ public partial class StationPanel : UserControl
             _txtScanInput.Focus();
         }
 
-        _btnReviewApi.Enabled = CanReviewApi();
-        _btnReviewApi.Text = GetReviewApiButtonText();
+        if (_cognexAdminLocked)
+        {
+            lblInfo.Text = $"BLOQUEADA - ADMIN: {_adminLockMessage}";
+            lblInfo.ForeColor = Color.Red;
+        }
+
+        _btnAdminRecoveryReset.Visible = true;
+        _btnAdminRecoveryReset.Enabled = !_adminUnlockDialogOpen;
+        if (_btnAdminRecoveryReset.Visible)
+            _btnAdminRecoveryReset.BringToFront();
+
+
         UpdateFinalizeButtonVisualState();
         ShowInstruction(lblInfo.Text, lblInfo.ForeColor);
         this.Text = statusText;
@@ -1269,7 +1514,7 @@ public partial class StationPanel : UserControl
 
     private void UpdateFinalizeButtonVisualState()
     {
-        if (_waitingRejectedCableRemoval || _rejectedCableRemovalPending || _bgMismatchActive)
+        if (_waitingRejectedCableRemoval || _rejectedCableRemovalPending || _bgMismatchActive || _cognexAdminLocked)
         {
             // Cambio solicitado: cuando hay scrap, el boton final se muestra en rojo.
             _btnFinalize.BackColor = Color.Red;
@@ -1332,22 +1577,64 @@ public partial class StationPanel : UserControl
         _rejectedCableRemovalPending = false;
         _operatorActionInProgress = false;
         _cognexSerialReviewInProgress = false;
+        _pendingBookingSerial = string.Empty;
+        _completedBookingState = null;
+        _bookingInProgress = false;
         _materialSensorRecheckInProgress = false;
         _waitingForMaterialBoxInsertion = false;
         _lastMaterialBoxPresentSignal = null;
+        _toolValidatedPartNumber = string.Empty;
         _zebraReleasedForActivePartNumber = false;
         _bgMismatchActive = false;
+        _cognexAdminLocked = false;
+        _adminUnlockDialogOpen = false;
+        _adminLockRequiresRejectedRemoval = false;
+        _adminLockRequiresPlcQualityPulse = false;
+        _adminLockCode = string.Empty;
+        _adminLockMessage = string.Empty;
         _plcCounterSent = false;
         _cognexReadBlockedUntil = DateTime.MinValue;
         _lstCables.Items.Clear();
-        UpdateTotalScannedCountLabel();
-        _btnReviewApi.Enabled = false;
         _txtApiInfo.Clear();
         lblBG.Text = "--";
         SetScrapVisualState(false);
         _txtScanInput.Clear();
         _txtScanInput.Focus();
         UpdateUI();
+    }
+
+    public async Task ResetStationFromMainAsync()
+    {
+        var activeProcess = ProcessManager.GetCurrentProcess();
+
+        await ResetCableInsertionOutputsAsync();
+        if (_config.PlcScrapMemory > 0)
+            await WriteScrapMemoryAsync(active: false);
+        await ResetConfiguredBgPinRegistersAsync();
+
+        Reset();
+
+        if (activeProcess != null && activeProcess.EnabledStations.Contains(_stationCode))
+        {
+            OnProcessStarted(activeProcess);
+            // El reset individual debe devolver el Zebra a esta estación.
+            // Solo cambiar ProcessManager a WAITING_ZEBRA deja el escáner
+            // asignado al flujo anterior y rechaza incluso el código correcto.
+            ZebraFlowService.RestartZebraAtStation(_stationCode);
+        }
+
+        LogService.Log(
+            $"[Station {_stationCode}] Individual station reset requested from FrmMain. " +
+            $"State={_processState}, ZebraOwner={ZebraFlowService.GetStationWaitingForZebra()}");
+    }
+
+    public async Task ResetAllStationsFromMainAsync()
+    {
+        await SendGlobalResetPulseAsync();
+        ZebraFlowService.Reset();
+        CognexFlowService.Reset();
+        ProcessManager.ResetProcess();
+        LogService.Log("Global reset requested from FrmMain");
     }
 
     public void StopCognex()
@@ -1404,6 +1691,38 @@ public partial class StationPanel : UserControl
     {
     }
 
+    public void SetInternalHeaderVisible(bool visible)
+    {
+   
+    }
+
+    public void SetInternalScanInputVisible(bool visible)
+    {
+        _txtScanInput.Visible = visible;
+    }
+
+    private void UpdateMasterStatusPanel()
+    {
+        if (!pnlMasterStatus.Visible)
+            return;
+
+        lblMasterPartNumber.Text = $"PartNumber: {_currentProcess?.PartNumber ?? "--"}";
+        lblMasterStatus.Text = $"Status: {_currentProcess?.Description ?? "--"}";
+        lblMasterProcessState.Text = _processState == StationProcessState.DISABLED
+            ? "Esperando proceso..."
+            : _processState.ToString();
+        lblMasterProcessState.ForeColor = _processState switch
+        {
+            StationProcessState.DISABLED => Color.Orange,
+            StationProcessState.WAITING_ZEBRA => Color.Orange,
+            StationProcessState.ZEBRA_IN_PROGRESS => Color.Blue,
+            StationProcessState.COGNEX_ACTIVE => Color.Green,
+            StationProcessState.COGNEX_DONE or StationProcessState.PLC_RELEASED => Color.DarkGreen,
+            StationProcessState.DONE => Color.Green,
+            _ => Color.White
+        };
+    }
+
     private async void _btnFinalize_Click(object sender, EventArgs e)
     {
         // Boton de pantalla: usa el mismo flujo que el boton fisico del PLC.
@@ -1438,18 +1757,16 @@ public partial class StationPanel : UserControl
             SerialNumbers = [.. _scannedCables]
         };
         var requestJson = JsonSerializer.Serialize(request, _apiInfoJsonOptions);
-        ShowApiInfo($"REQUEST{Environment.NewLine}{requestJson}");
+        ShowApiInfo(string.Empty);
         LogService.Log($"[Station {_stationCode}] API request: {requestJson}");
 
-        _btnReviewApi.Enabled = false;
-        var originalText = _btnReviewApi.Text;
-        _btnReviewApi.Text = "Review...";
+
         _operatorActionInProgress = true;
 
         try
         {
             var result = await StationInfoApiService.ReviewSerialsIndividuallyAsync(request);
-            ShowApiResult(requestJson, result);
+            ShowApiResult(result);
             LogService.Log($"[Station {_stationCode}] API response status={result.StatusCode?.ToString() ?? "N/A"} success={result.Success} resultCode={result.ResultCode?.ToString() ?? "N/A"} resultText={result.ResultText}: {result.ResponseBody}");
 
             if (result.Success)
@@ -1458,22 +1775,36 @@ public partial class StationPanel : UserControl
                 _waitingRejectedCableRemoval = false;
                 _rejectedCableRemovalPending = false;
                 _rejectedCables.Clear();
-                MarkAllCablesAsOk();
-                ShowSuccess("API OK. Enviando conteo al PLC.");
+                ShowSuccess("CHECK OK. Enviando conteo al PLC.");
                 await FinalizeStationCycleAsync();
             }
             else
             {
                 _apiApproved = false;
-                BeginRejectedCableRemoval(result.RejectedSerialNumbers);
-                ShowError(result.Message);
+                var rejectedSerials = GetConfirmedMesRejectedSerials(result);
+                if (rejectedSerials.Count == 0)
+                {
+                    ShowError($"No se pudo confirmar la pieza con MES. Se requiere autorización para liberar. {result.Message}");
+                    LogService.Log($"[Station {_stationCode}] MES technical/unconfirmed batch failure. Scrap not incremented. Message={result.Message}");
+                    LockForCognexAdmin(
+                        "MES_TECHNICAL_ERROR",
+                        string.IsNullOrWhiteSpace(result.Message) ? "No fue posible confirmar las piezas con MES." : result.Message,
+                        requiresRejectedRemoval: false);
+                }
+                else
+                {
+                    BeginRejectedCableRemoval(rejectedSerials);
+                    ShowError(result.Message);
+                    LockForCognexAdmin(
+                        "API_REJECTED",
+                        string.IsNullOrWhiteSpace(result.Message) ? "MES rechazó una o más piezas." : result.Message,
+                        requiresRejectedRemoval: true);
+                }
             }
         }
         finally
         {
             _operatorActionInProgress = false;
-            _btnReviewApi.Text = originalText;
-            _btnReviewApi.Enabled = CanReviewApi();
             UpdateUI();
         }
     }
@@ -1485,6 +1816,50 @@ public partial class StationPanel : UserControl
         ZebraFlowService.Reset();
         CognexFlowService.Reset();
         ProcessManager.ResetProcess();
+    }
+
+    private async void _btnAdminRecoveryReset_Click(object sender, EventArgs e)
+    {
+        if (_adminUnlockDialogOpen)
+            return;
+
+        _adminUnlockDialogOpen = true;
+        _btnAdminRecoveryReset.Enabled = false;
+        try
+        {
+            using var dialog = new StationErrorAlertForm(
+                _config.Name,
+                "RESET_GENERAL",
+                "Autoriza el reset general. Se reiniciarán PLC, proceso, Zebra y Cognex.",
+                _config.AdminPass);
+            var result = dialog.ShowDialog(FindForm());
+            if (result != DialogResult.OK || !dialog.Authorized)
+                return;
+
+            var discardedSerial = _pendingBookingSerial;
+            LogService.Log($"[Station {_stationCode}] Quality authorized GLOBAL recovery reset. Discarded pending serial={discardedSerial}");
+            SystemEventLogService.LogInfo(
+                "QUALITY_RECOVERY_RESET",
+                $"Station {_stationCode}",
+                $"Global recovery reset authorized. Discarded pending serial: {discardedSerial}");
+
+            await SendGlobalResetPulseAsync();
+            Reset();
+            ZebraFlowService.Reset();
+            CognexFlowService.Reset();
+            ProcessManager.ResetProcess();
+        }
+        finally
+        {
+            _adminUnlockDialogOpen = false;
+            UpdateUI();
+            _txtScanInput.Focus();
+        }
+    }
+
+    private void _btnResetGoodCount_Click(object sender, EventArgs e)
+    {
+        ResetGoodPieceCounter(_currentProcess?.PartNumber ?? _goodPiecePartNumber, "manual reset");
     }
 
     private async Task SendGlobalResetPulseAsync()
@@ -1558,27 +1933,27 @@ public partial class StationPanel : UserControl
         _txtApiInfo.SelectionLength = 0;
     }
 
-    private void ShowApiResult(string requestJson, StationInfoApiResult result)
+    private void ShowApiResult(StationInfoApiResult result)
     {
-        var responseBody = string.IsNullOrWhiteSpace(result.ResponseBody)
-            ? "(sin cuerpo de respuesta)"
-            : result.ResponseBody;
-        var serialDetails = result.SerialResults.Count == 0
-            ? "(sin revision individual)"
-            : string.Join(Environment.NewLine, result.SerialResults.Select(r =>
-                $"{r.SerialNumber}: {(r.Success ? "OK" : "NOK")} | RESULT_CODE: {r.ResultCode?.ToString() ?? "N/A"} | {r.ResultText}"));
+        if (result.Success)
+        {
+            ShowApiInfo(string.Empty);
+            return;
+        }
+
+        var errorMessage = !string.IsNullOrWhiteSpace(result.Message)
+            ? result.Message.Trim()
+            : "No fue posible validar la pieza con MES/API.";
+        var resultText = string.IsNullOrWhiteSpace(result.ResultText)
+            ? "Sin detalle"
+            : result.ResultText.Trim();
+        var resultCode = result.ResultCode?.ToString() ?? "Sin código";
 
         ShowApiInfo(
-            $"REQUEST{Environment.NewLine}{requestJson}{Environment.NewLine}{Environment.NewLine}" +
-            $"RESPONSE{Environment.NewLine}" +
-            $"Success: {result.Success}{Environment.NewLine}" +
-            $"StatusCode: {result.StatusCode?.ToString() ?? "N/A"}{Environment.NewLine}" +
-            $"RESULT_CODE: {result.ResultCode?.ToString() ?? "N/A"}{Environment.NewLine}" +
-            $"RESULT_TEXT: {result.ResultText}{Environment.NewLine}" +
-            $"RejectedSerialNumbers: {string.Join(", ", result.RejectedSerialNumbers)}{Environment.NewLine}" +
-            $"Message: {result.Message}{Environment.NewLine}" +
-            $"SerialResults:{Environment.NewLine}{serialDetails}{Environment.NewLine}" +
-            $"Body:{Environment.NewLine}{responseBody}");
+            $"ERROR MES/API{Environment.NewLine}" +
+            $"{errorMessage}{Environment.NewLine}" +
+            $"RESULT_CODE: {resultCode}{Environment.NewLine}" +
+            $"RESULT_TEXT: {resultText}");
     }
 
     private void BeginRejectedCableRemoval(List<string> rejectedSerialNumbers)
@@ -1596,6 +1971,50 @@ public partial class StationPanel : UserControl
         SetScrapVisualState(true);
         MarkRejectedCables();
         UpdateUI();
+    }
+
+    private async Task<bool> ResetCableInsertionOutputsAsync()
+    {
+        // PlcFinalProcessMemory (M55/M56/M57) usa polaridad inversa:
+        // ON bloquea el pistón y OFF permite manipularlo.
+        if (!await WritePlcMemoryAsync(_config.PlcFinalProcessMemory, true, "cerrar pistón por N=N"))
+            return false;
+
+        // Después se limpia la señal auxiliar de proceso con cantidad.
+        if (!await WritePlcMemoryAsync(_config.PlcQuantityProcessMemory, false, "reset proceso con cantidad"))
+            return false;
+
+        LogService.Log($"[Station {_stationCode}] Piston closed and insertion commands reset after N=N");
+        return true;
+    }
+
+    private static List<string> GetConfirmedMesRejectedSerials(StationInfoApiResult result)
+    {
+        // Un fallo de red, timeout, configuración o HTTP no exitoso no es Scrap.
+        // Scrap requiere una respuesta HTTP exitosa con RESULT_CODE distinto de cero.
+        var confirmed = result.SerialResults
+            .Where(serialResult => !serialResult.Success
+                && serialResult.StatusCode is >= 200 and <= 299
+                && serialResult.ResultCode.HasValue
+                && serialResult.ResultCode.Value != 0)
+            .Select(serialResult => serialResult.SerialNumber)
+            .Where(serial => !string.IsNullOrWhiteSpace(serial))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (confirmed.Count > 0)
+            return confirmed;
+
+        var aggregateIsConfirmedRejection = result.StatusCode is >= 200 and <= 299
+            && result.ResultCode.HasValue
+            && result.ResultCode.Value != 0;
+
+        return aggregateIsConfirmedRejection
+            ? result.RejectedSerialNumbers
+                .Where(serial => !string.IsNullOrWhiteSpace(serial))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList()
+            : [];
     }
 
     private void ProcessRejectedCableRemoval(string barcode)
@@ -1624,7 +2043,6 @@ public partial class StationPanel : UserControl
         _totalScannedCount = Math.Max(0, _totalScannedCount - removed);
         RemoveCableListItem(barcode);
         RefreshCableCount();
-        UpdateTotalScannedCountLabel();
         _apiApproved = _scannedCables.Count > 0 && _rejectedCables.Count == 0;
         MarkRejectedCables();
 
@@ -1645,6 +2063,38 @@ public partial class StationPanel : UserControl
         }
 
         UpdateUI();
+    }
+
+    private void RemoveRejectedCablesAfterQualityAuthorization()
+    {
+        var rejectedSerials = _rejectedCables.ToList();
+        foreach (var serial in rejectedSerials)
+        {
+            var removed = _scannedCables.RemoveAll(value =>
+                string.Equals(value, serial, StringComparison.OrdinalIgnoreCase));
+            if (removed <= 0)
+                continue;
+
+            _blockedRejectedCables.Add(serial);
+            _totalScannedCount = Math.Max(0, _totalScannedCount - removed);
+            RemoveCableListItem(serial);
+
+            if (string.Equals(_pendingBookingSerial, serial, StringComparison.OrdinalIgnoreCase))
+            {
+                _pendingBookingSerial = string.Empty;
+                _completedBookingState = null;
+            }
+        }
+
+        _rejectedCables.Clear();
+        _waitingRejectedCableRemoval = false;
+        _rejectedCableRemovalPending = false;
+        _apiApproved = false;
+        RefreshCableCount();
+        MarkRejectedCables();
+        SetScrapVisualState(false);
+        LogService.Log($"[Station {_stationCode}] Rejected serial removed automatically after Quality authorization: {string.Join(", ", rejectedSerials)}");
+        ShowSuccess("Calidad autorizó el rechazo. Retira la pieza y escanea el siguiente serial.");
     }
 
     private void StartNokCognexCooldown(string serial)
@@ -1678,6 +2128,208 @@ public partial class StationPanel : UserControl
         SetScrapVisualState(active);
     }
 
+    private void LockForCognexAdmin(string errorCode, string message, bool requiresRejectedRemoval)
+    {
+        _cognexAdminLocked = true;
+        _adminLockCode = errorCode;
+        _adminLockMessage = message;
+        _adminLockRequiresRejectedRemoval = requiresRejectedRemoval;
+        _adminLockRequiresPlcQualityPulse = false;
+        SetScrapVisualState(true);
+        LogService.Log($"[Station {_stationCode}] ADMIN LOCK activated. Code={errorCode}, PN={GetRecipePartNumber()}, Message={message}");
+        SystemEventLogService.LogError("COGNEX_ADMIN_LOCK", $"Station {_stationCode}", $"{errorCode}: {message}");
+        UpdateUI();
+        ShowAdminUnlockDialog();
+    }
+
+    private async void ShowAdminUnlockDialog()
+    {
+        if (!_cognexAdminLocked || _adminUnlockDialogOpen || IsDisposed)
+            return;
+
+        if (InvokeRequired)
+        {
+            BeginInvoke(ShowAdminUnlockDialog);
+            return;
+        }
+
+        _adminUnlockDialogOpen = true;
+        try
+        {
+            var restartCognexAfterQualityAuthorization = _adminLockRequiresPlcQualityPulse;
+            var discardSerialAfterMesTechnicalError = string.Equals(_adminLockCode, "MES_TECHNICAL_ERROR", StringComparison.Ordinal);
+            var completeAfterBookingError = string.Equals(_adminLockCode, "BOOKING_ERROR", StringComparison.Ordinal);
+            using var dialog = new StationErrorAlertForm(
+                _config.Name,
+                _adminLockCode,
+                _adminLockMessage,
+                _config.AdminPass);
+            var result = dialog.ShowDialog(FindForm());
+            if (dialog.FailedAttempts > 0)
+                LogService.Log($"[Station {_stationCode}] Admin unlock failed attempts: {dialog.FailedAttempts}. Code={_adminLockCode}");
+
+            if (result != DialogResult.OK || !dialog.Authorized)
+            {
+                LogService.Log($"[Station {_stationCode}] Admin unlock cancelled. Code={_adminLockCode}");
+                return;
+            }
+
+            if (_adminLockRequiresPlcQualityPulse)
+            {
+                if (!string.IsNullOrWhiteSpace(_pendingBookingSerial)
+                    && _completedBookingState != 2
+                    && !await BookPendingSerialAsync(2))
+                {
+                    // La autorizacion administrativa debe poder limpiar el serial aunque
+                    // MES no permita registrar el scrap. El fallo queda en bitacora.
+                    LogService.Log($"[Station {_stationCode}] Scrap booking failed during PLC error authorization. Continuing with manual serial discard. Serial={_pendingBookingSerial}");
+                    SystemEventLogService.LogInfo("MES_SCRAP_BYPASS", $"Station {_stationCode}", $"Manual discard: {_pendingBookingSerial}");
+                }
+
+                var plcErrorStillActive = await Task.Run(() => _plc.ReadCoil(_config.PlcCavityErrorMemory));
+                if (!_plc.IsConnected)
+                {
+                    ShowError("PLC no conectado. La estación permanece bloqueada.");
+                    return;
+                }
+
+                if (plcErrorStillActive)
+                {
+                    ShowInstruction($"Enviando autorización de Calidad a M{_config.PlcQualityAuthorizationMemory}...", Color.DarkOrange);
+                    var pulseOk = _config.PlcQualityAuthorizationMemory > 0
+                        && await Task.Run(() => _plc.SendPulse(_config.PlcQualityAuthorizationMemory, 5000));
+                    if (!pulseOk)
+                    {
+                        ShowError($"No se pudo enviar la autorización al PLC M{_config.PlcQualityAuthorizationMemory}.");
+                        LogService.Log($"[Station {_stationCode}] Failed quality authorization pulse on M{_config.PlcQualityAuthorizationMemory}");
+                        return;
+                    }
+
+                    var errorCleared = await WaitForCavityErrorToClearAsync();
+                    if (!errorCleared)
+                    {
+                        ShowError($"El PLC no liberó el error M{_config.PlcCavityErrorMemory}. Presiona el botón para reintentar la autorización.");
+                        LogService.Log($"[Station {_stationCode}] Cavity error remained active after quality pulse. M{_config.PlcCavityErrorMemory}=1");
+                        return;
+                    }
+                }
+                else
+                {
+                    LogService.Log($"[Station {_stationCode}] PLC cavity error was already inactive when admin authorization was accepted; quality pulse skipped");
+                }
+
+                // La pieza que produjo el error de cavidad ya fue declarada scrap.
+                // Antes de liberar la estacion, vuelve el PLC a la condicion inicial:
+                // piston bloqueado y comando de insercion anterior apagado.
+                if (!await ResetCableInsertionOutputsAsync())
+                {
+                    ShowError("No se pudo reiniciar el ciclo de insercion. La estacion permanece bloqueada.");
+                    return;
+                }
+            }
+
+            if (completeAfterBookingError && !await ResetCableInsertionOutputsAsync())
+            {
+                ShowError("No se pudo reiniciar la estación en el PLC. Presiona el botón para reintentar.");
+                return;
+            }
+
+            var restartCognexWithoutSerial = _adminLockRequiresPlcQualityPulse
+                && string.IsNullOrWhiteSpace(_pendingBookingSerial);
+
+            if (restartCognexWithoutSerial && !await ResetCableInsertionOutputsAsync())
+            {
+                ShowError("No se pudo reiniciar la estación en el PLC. Presiona el botón para reintentar.");
+                return;
+            }
+
+            _cognexAdminLocked = false;
+            LogService.Log($"[Station {_stationCode}] ADMIN LOCK released. Code={_adminLockCode}, PN={GetRecipePartNumber()}");
+            SystemEventLogService.LogInfo("COGNEX_ADMIN_LOCK", $"Station {_stationCode}", $"Unlocked: {_adminLockCode}");
+
+            if (_adminLockRequiresRejectedRemoval)
+            {
+                RemoveRejectedCablesAfterQualityAuthorization();
+            }
+            else if (restartCognexAfterQualityAuthorization)
+            {
+                // Descarta el serial que fue insertado incorrectamente y comienza
+                // un ciclo completo nuevo desde Cognex/API para la siguiente pieza.
+                RestartStationAfterCounterComplete();
+                await SetYellowButtonAsync(active: true, "scrap autorizado");
+                ProcessManager.RestartStationCognexActive(_stationCode);
+                CognexFlowService.StartCognexAtStation(_stationCode);
+                ShowSuccess("Scrap autorizado. Escanea un nuevo serial en Cognex.");
+                LogService.Log($"[Station {_stationCode}] Scrap cycle restarted after Quality authorization; rejected serial and insertion state cleared");
+            }
+            else if (completeAfterBookingError)
+            {
+                var releasedSerial = _pendingBookingSerial;
+                CountGoodPieces([releasedSerial]);
+                MarkCableAsOk(releasedSerial);
+                LogService.Log($"[Station {_stationCode}] MES booking bypass authorized by admin. Serial={releasedSerial}");
+                SystemEventLogService.LogInfo("MES_BOOKING_BYPASS", $"Station {_stationCode}", $"Manual release: {releasedSerial}");
+                RestartStationAfterCounterComplete();
+                await SetYellowButtonAsync(active: true, "MES booking bypass");
+                ProcessManager.RestartStationCognexActive(_stationCode);
+                CognexFlowService.StartCognexAtStation(_stationCode);
+                ShowSuccess("Autorización correcta. Ciclo liberado; escanea un nuevo serial.");
+            }
+            else if (discardSerialAfterMesTechnicalError)
+            {
+                var discardedSerial = _pendingBookingSerial;
+                LogService.Log($"[Station {_stationCode}] MES technical error authorized by admin. Discarding serial={discardedSerial}");
+                SystemEventLogService.LogInfo("MES_SERIAL_DISCARDED", $"Station {_stationCode}", $"Discarded after MES error: {discardedSerial}");
+                RestartStationAfterCounterComplete();
+                await SetYellowButtonAsync(active: true, "MES serial discarded");
+                ProcessManager.RestartStationCognexActive(_stationCode);
+                CognexFlowService.StartCognexAtStation(_stationCode);
+                ShowSuccess("Autorización correcta. Serial eliminado; escanea uno nuevo.");
+            }
+            else
+            {
+                _bgMismatchActive = false;
+                SetScrapVisualState(false);
+                ShowSuccess("Autorizacion correcta. Continua escaneando.");
+            }
+
+            _adminLockCode = string.Empty;
+            _adminLockMessage = string.Empty;
+            _adminLockRequiresRejectedRemoval = false;
+            _adminLockRequiresPlcQualityPulse = false;
+
+            if (restartCognexWithoutSerial)
+            {
+                RestartStationAfterCounterComplete();
+                await SetYellowButtonAsync(active: true, "cavity error without serial");
+                ProcessManager.RestartStationCognexActive(_stationCode);
+                CognexFlowService.StartCognexAtStation(_stationCode);
+                ShowSuccess("Calidad autorizó. Esperando serial Cognex...");
+            }
+
+            UpdateUI();
+            _txtScanInput.Focus();
+        }
+        finally
+        {
+            _adminUnlockDialogOpen = false;
+        }
+    }
+
+    private async Task<bool> WaitForCavityErrorToClearAsync()
+    {
+        for (var attempt = 0; attempt < 50; attempt++)
+        {
+            var active = await Task.Run(() => _plc.ReadCoil(_config.PlcCavityErrorMemory));
+            if (_plc.IsConnected && !active)
+                return true;
+
+            await Task.Delay(100);
+        }
+
+        return false;
+    }
+
     private async Task WriteScrapMemoryAsync(bool active)
     {
         var ok = await Task.Run(() => _plc.WriteCoil(_config.PlcScrapMemory, active));
@@ -1696,15 +2348,133 @@ public partial class StationPanel : UserControl
         UpdateInsertedCountLabelText();
     }
 
-    private void UpdateTotalScannedCountLabel()
-    {
-        _lblCableCount.Text = $"Escaneadas: {_totalScannedCount}";
-    }
 
     private void UpdateTotalScrapCountLabel()
     {
         _lblScrapCount.Text = $"Scrap: {_totalScrapCount}";
     }
+
+    private void CountGoodPieces(IEnumerable<string> serials)
+    {
+        EnsureCurrentGoodPieceHour();
+        var added = 0;
+        foreach (var serial in serials.Where(serial => !string.IsNullOrWhiteSpace(serial)))
+        {
+            if (_countedGoodSerials.Add(serial))
+                added++;
+        }
+
+        if (added == 0)
+            return;
+
+        _goodPieceCount += added;
+        _bgGoodPieceCount += added;
+        _hourlyGoodPieceCount += added;
+        UpdateGoodPieceCountLabel();
+        LogService.Log($"[Station {_stationCode}] Good piece counter +{added}. Total={_goodPieceCount}, PN={_goodPiecePartNumber}");
+    }
+
+    private void ResetGoodPieceCounter(string partNumber, string reason)
+    {
+        _goodPieceCount = 0;
+        _bgGoodPieceCount = 0;
+        _goodPieceBg = _stationConfig?.BG?.Trim() ?? _goodPieceBg;
+        _hourlyGoodPieceCount = 0;
+        _hourlyCounterStart = GetHourStart(DateTime.Now);
+        _goodPiecePartNumber = partNumber;
+        _countedGoodSerials.Clear();
+        UpdateGoodPieceCountLabel();
+        LogService.Log($"[Station {_stationCode}] Good piece counter reset. PN={partNumber}, Reason={reason}");
+    }
+
+    private void UpdateGoodPieceCountLabel()
+    {
+        _lblGoodPieceCount.Text =
+            $"Total estación: {_goodPieceCount}{Environment.NewLine}" +
+            $"BG {GetGoodPieceBgDisplay()}: {_bgGoodPieceCount}{Environment.NewLine}" +
+            $"Hora {_hourlyCounterStart:HH}:00-{_hourlyCounterStart.AddHours(1):HH}:00: {_hourlyGoodPieceCount}";
+    }
+
+    private void SetGoodPieceBg(string bg)
+    {
+        var normalizedBg = bg.Trim();
+        if (string.Equals(_goodPieceBg, normalizedBg, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (!string.IsNullOrWhiteSpace(_goodPieceBg))
+            LogService.Log($"[Station {_stationCode}] BG good piece counter closed. BG={_goodPieceBg}, Total={_bgGoodPieceCount}");
+
+        _goodPieceBg = normalizedBg;
+        _bgGoodPieceCount = 0;
+        UpdateGoodPieceCountLabel();
+    }
+
+    private string GetGoodPieceBgDisplay() =>
+        string.IsNullOrWhiteSpace(_goodPieceBg) ? "--" : _goodPieceBg;
+
+    private void EnsureCurrentGoodPieceHour()
+    {
+        var currentHour = GetHourStart(DateTime.Now);
+        if (currentHour == _hourlyCounterStart)
+            return;
+
+        LogService.Log($"[Station {_stationCode}] Hourly good piece counter closed. Hour={_hourlyCounterStart:yyyy-MM-dd HH}:00, Total={_hourlyGoodPieceCount}, PN={_goodPiecePartNumber}");
+        _hourlyCounterStart = currentHour;
+        _hourlyGoodPieceCount = 0;
+        UpdateGoodPieceCountLabel();
+    }
+
+    private static DateTime GetHourStart(DateTime value) =>
+        new(value.Year, value.Month, value.Day, value.Hour, 0, 0);
+
+    public GoodPieceCounterSnapshot GetGoodPieceCounterSnapshot()
+    {
+        EnsureCurrentGoodPieceHour();
+        return new GoodPieceCounterSnapshot(
+            _config.StationNumber,
+            _config.Name,
+            _goodPieceCount,
+            _goodPieceBg,
+            _bgGoodPieceCount,
+            _hourlyGoodPieceCount,
+            _hourlyCounterStart);
+    }
+
+    public void ResetGoodPieceCountersFromMain()
+    {
+        ResetGoodPieceCounter(_currentProcess?.PartNumber ?? _goodPiecePartNumber, "central counter form");
+    }
+
+    public void ResetTotalGoodPieceCounterFromMain()
+    {
+        _goodPieceCount = 0;
+        UpdateGoodPieceCountLabel();
+        LogService.Log($"[Station {_stationCode}] Total good piece counter reset from central counter form.");
+    }
+
+    public void ResetBgGoodPieceCounterFromMain()
+    {
+        _bgGoodPieceCount = 0;
+        UpdateGoodPieceCountLabel();
+        LogService.Log($"[Station {_stationCode}] BG good piece counter reset from central counter form. BG={GetGoodPieceBgDisplay()}");
+    }
+
+    public void ResetHourlyGoodPieceCounterFromMain()
+    {
+        _hourlyGoodPieceCount = 0;
+        _hourlyCounterStart = GetHourStart(DateTime.Now);
+        UpdateGoodPieceCountLabel();
+        LogService.Log($"[Station {_stationCode}] Hourly good piece counter reset from central counter form. Hour={_hourlyCounterStart:yyyy-MM-dd HH}:00");
+    }
+
+    public sealed record GoodPieceCounterSnapshot(
+        int StationNumber,
+        string StationName,
+        int Total,
+        string Bg,
+        int BgTotal,
+        int HourTotal,
+        DateTime HourStart);
 
     private int _insertedCount = 0;
 
@@ -1781,5 +2551,20 @@ public partial class StationPanel : UserControl
             return "Escanea el serial con error para retirarlo del contador.";
 
         return $"Retirar serial rechazado: {string.Join(", ", _rejectedCables)}";
+    }
+
+    private void lblBG_Click(object sender, EventArgs e)
+    {
+
+    }
+
+    private void StationPanel_Load(object sender, EventArgs e)
+    {
+
+    }
+
+    private void panel3_Paint(object sender, PaintEventArgs e)
+    {
+
     }
 }

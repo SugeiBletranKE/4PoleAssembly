@@ -10,7 +10,6 @@ public partial class RecipeEditorForm : Form
     private List<Tool> _currentTools = [];
     private Dictionary<int, RecipeStationPanel> _stationPanels = [];
     private List<TextBox> _bgTextboxes = [];
-    private readonly Dictionary<int, TextBox> _stationToolNameTextboxes = [];
     private readonly Dictionary<int, TextBox> _stationToolBarcodeTextboxes = [];
     private readonly Panel _stationToolsPanel = new();
     private readonly Panel _housingPanel = new();
@@ -22,6 +21,8 @@ public partial class RecipeEditorForm : Form
     public RecipeEditorForm()
     {
         InitializeComponent();
+        lblDescription.Visible = false;
+        txtDescription.Visible = false;
         lblBGs.Text = "Number of cables";
         radBG1.Text = "1 cable";
         radBG2.Text = "2 cables";
@@ -57,8 +58,6 @@ public partial class RecipeEditorForm : Form
         txtPartNumber.Text = r?.PartNumber ?? string.Empty;
         txtPartNumber.ReadOnly = r is not null;
 
-        txtDescription.Text = r?.Description ?? string.Empty;
-        txtDescription.ReadOnly = r is not null;
         SetConnectorGenderSelection(r?.ConnectorGender ?? "A");
 
         var bgCount = GetBGCountFromRecipe(r);
@@ -167,7 +166,7 @@ public partial class RecipeEditorForm : Form
 
     private void SetupStationToolsPanel()
     {
-        lblTools.Text = "Tools by station";
+        lblTools.Text = "Tool barcode by station";
         HideLegacyToolControls();
 
         _stationToolsPanel.Location = new Point(15, 448);
@@ -186,14 +185,14 @@ public partial class RecipeEditorForm : Form
 
         var lblHousing = new Label
         {
-            Text = "Housing:",
+            Text = "Material / Housing barcode:",
             Location = new Point(0, 0),
             AutoSize = true,
             Font = new Font("Segoe UI", 11F, FontStyle.Bold)
         };
 
         _txtHousing.Location = new Point(0, 23);
-        _txtHousing.Size = new Size(190, 25);
+        _txtHousing.Size = new Size(360, 25);
 
         _housingPanel.Controls.Add(lblHousing);
         _housingPanel.Controls.Add(_txtHousing);
@@ -328,7 +327,6 @@ public partial class RecipeEditorForm : Form
             : 448;
         lblTools.Top = _stationToolsPanel.Top - 25;
         _stationToolsPanel.Controls.Clear();
-        _stationToolNameTextboxes.Clear();
         _stationToolBarcodeTextboxes.Clear();
 
         var stationNumbers = GetStationNumbersForBGCount(_selectedBGCount);
@@ -345,26 +343,16 @@ public partial class RecipeEditorForm : Form
                 Size = new Size(85, 24)
             };
 
-            var txtName = new TextBox
-            {
-                Location = new Point(95, y + 2),
-                Size = new Size(230, 25),
-                PlaceholderText = "Tool name",
-                Text = tool?.Name ?? string.Empty
-            };
-
             var txtBarcode = new TextBox
             {
-                Location = new Point(335, y + 2),
-                Size = new Size(220, 25),
-                PlaceholderText = "Tool barcode",
-                Text = tool?.Barcode ?? string.Empty
+                Location = new Point(95, y + 2),
+                Size = new Size(460, 25),
+                PlaceholderText = "Escanee Tool barcode",
+                Text = !string.IsNullOrWhiteSpace(tool?.Barcode) ? tool.Barcode : tool?.Name ?? string.Empty
             };
 
             _stationToolsPanel.Controls.Add(lblStation);
-            _stationToolsPanel.Controls.Add(txtName);
             _stationToolsPanel.Controls.Add(txtBarcode);
-            _stationToolNameTextboxes[stationNum] = txtName;
             _stationToolBarcodeTextboxes[stationNum] = txtBarcode;
         }
 
@@ -379,14 +367,12 @@ public partial class RecipeEditorForm : Form
         var tools = new List<Tool>();
         foreach (var stationNum in GetStationNumbersForBGCount(_selectedBGCount))
         {
-            var name = _stationToolNameTextboxes.TryGetValue(stationNum, out var nameTextBox)
-                ? nameTextBox.Text.Trim()
-                : string.Empty;
             var barcode = _stationToolBarcodeTextboxes.TryGetValue(stationNum, out var barcodeTextBox)
                 ? barcodeTextBox.Text.Trim()
                 : string.Empty;
 
-            tools.Add(new Tool { Name = name, Barcode = barcode });
+            // Name se conserva por compatibilidad, usando el mismo valor escaneado.
+            tools.Add(new Tool { Name = barcode, Barcode = barcode });
         }
 
         return tools;
@@ -445,7 +431,6 @@ public partial class RecipeEditorForm : Form
         lstRecipes.ClearSelected();
         LoadRecipeIntoForm(null);
         txtPartNumber.ReadOnly = false;
-        txtDescription.ReadOnly = false;
         txtPartNumber.Focus();
     }
 
@@ -474,7 +459,7 @@ public partial class RecipeEditorForm : Form
         var recipe = new Recipe
         {
             PartNumber = pn,
-            Description = txtDescription.Text.Trim(),
+            Description = string.Empty,
             CableCount = _selectedBGCount,
             // Cambio solicitado: la estacion del conector/material se calcula segun cantidad de BGs.
             ConnectorGender = GetSelectedConnectorGender(),
@@ -524,7 +509,6 @@ public partial class RecipeEditorForm : Form
     {
         LoadRecipeIntoForm(null);
         txtPartNumber.ReadOnly = false;
-        txtDescription.ReadOnly = false;
         lstRecipes.ClearSelected();
     }
 

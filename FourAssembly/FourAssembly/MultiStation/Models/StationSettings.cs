@@ -4,6 +4,7 @@ public class StationSettings
 {
     public int StationNumber { get; set; }
     public string SapStationNumber { get; set; } = string.Empty;
+    public string AdminPass { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string ComPort { get; set; } = string.Empty;
     public int MonitorIndex { get; set; }
@@ -19,7 +20,11 @@ public class StationSettings
     public int PlcFinalProcessMemory { get; set; }
     public int PlcCounterCompleteMemory { get; set; }
     public int PlcScrapMemory { get; set; }
+    public int PlcBtnYellow { get; set; }
     public int PlcMaterialRemovedMemory { get; set; }
+    public int PlcCavityErrorMemory { get; set; }
+    public int PlcCavityErrorRegister { get; set; }
+    public int PlcQualityAuthorizationMemory { get; set; }
     public List<int> PlcFemalePinMemories { get; set; } = [0, 0, 0, 0];
     public List<int> PlcMalePinMemories { get; set; } = [0, 0, 0, 0];
     public string PlcFemale { get; set; } = "A";

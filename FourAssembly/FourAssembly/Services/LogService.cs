@@ -4,14 +4,16 @@ using System.IO;
 
 public static class LogService
 {
-    private static readonly string _logPath = @"C:/ke/FourPole/app.log";
+    private static readonly string _logDirectory = @"C:\ke\FourPole";
     private static readonly object _lockObj = new();
+
+    private static string GetLogPath(DateTime date) =>
+        Path.Combine(_logDirectory, $"app_{date:yyyy-MM-dd}.log");
 
     public static void Initialize()
     {
-        var dir = Path.GetDirectoryName(_logPath);
-        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-            Directory.CreateDirectory(dir);
+        if (!Directory.Exists(_logDirectory))
+            Directory.CreateDirectory(_logDirectory);
 
         Log("=== Application Started ===");
     }
@@ -22,9 +24,10 @@ public static class LogService
         {
             try
             {
-                var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+                var now = DateTime.Now;
+                var timestamp = now.ToString("yyyy-MM-dd HH:mm:ss.fff");
                 var logLine = $"[{timestamp}] {message}";
-                File.AppendAllText(_logPath, logLine + Environment.NewLine);
+                File.AppendAllText(GetLogPath(now), logLine + Environment.NewLine);
                 Console.WriteLine(logLine);
             }
             catch { }
@@ -41,8 +44,9 @@ public static class LogService
     {
         try
         {
-            if (File.Exists(_logPath))
-                File.Delete(_logPath);
+            var logPath = GetLogPath(DateTime.Now);
+            if (File.Exists(logPath))
+                File.Delete(logPath);
         }
         catch { }
     }
