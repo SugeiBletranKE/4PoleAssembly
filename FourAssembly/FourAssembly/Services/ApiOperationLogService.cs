@@ -13,6 +13,11 @@ public static class ApiOperationLogService
 
     public static void LogOperation(ApiOperationLogEntry entry)
     {
+        // No genera archivos para operaciones correctas. Conserva únicamente
+        // fallas HTTP, excepciones o respuestas MES distintas de OK.
+        if (entry.Success && entry.ResultCode == 0)
+            return;
+
         lock (_lockObj)
         {
             try

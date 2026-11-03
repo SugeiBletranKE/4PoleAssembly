@@ -94,7 +94,9 @@ public static class RecipeRepository
 
     private static void NormalizeRecipe(Recipe recipe)
     {
-        recipe.ConnectorGender = string.Equals(recipe.ConnectorGender.Trim(), "B", StringComparison.OrdinalIgnoreCase)
+        var connectorGender = (recipe.ConnectorGender ?? string.Empty).Trim();
+        recipe.ConnectorGender = string.Equals(connectorGender, "B", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(connectorGender, "Male", StringComparison.OrdinalIgnoreCase)
             ? "B"
             : "A";
 

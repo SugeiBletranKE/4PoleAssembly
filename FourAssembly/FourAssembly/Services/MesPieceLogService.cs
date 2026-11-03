@@ -13,6 +13,12 @@ public static class MesPieceLogService
 
     public static void LogPieceReview(MesPieceLogEntry entry)
     {
+        // No genera un archivo por cada pieza correcta. Conserva rechazos,
+        // errores técnicos y cualquier clasificación diferente de OK.
+        if (entry.Success
+            && string.Equals(entry.Classification, "OK", StringComparison.OrdinalIgnoreCase))
+            return;
+
         lock (_lockObj)
         {
             try

@@ -8,6 +8,7 @@ namespace FourAssembly.MultiStation
         private Button btnRecipeEditor;
         private Button btnCognex;
         private Button btnPlc;
+        private Button btnPresence;
         private Button btnSettings;
         private Button btnCounters;
         private Button btnToggleSelector;
@@ -30,6 +31,7 @@ namespace FourAssembly.MultiStation
             btnEstaciones = new Button();
             btnToggleSelector = new Button();
             btnCognex = new Button();
+            btnPresence = new Button();
             btnPlc = new Button();
             btnSettings = new Button();
             pnMenu = new Panel();
@@ -60,6 +62,7 @@ namespace FourAssembly.MultiStation
             menuPanel.Controls.Add(btnEstaciones);
             menuPanel.Controls.Add(btnToggleSelector);
             menuPanel.Controls.Add(btnCognex);
+            menuPanel.Controls.Add(btnPresence);
             menuPanel.Controls.Add(btnPlc);
             menuPanel.Controls.Add(btnSettings);
             menuPanel.Dock = DockStyle.Top;
@@ -74,7 +77,7 @@ namespace FourAssembly.MultiStation
             btnRecipeEditor.Dock = DockStyle.Right;
             btnRecipeEditor.Font = new Font("Segoe UI", 12F);
             btnRecipeEditor.ForeColor = Color.White;
-            btnRecipeEditor.Location = new Point(619, 0);
+            btnRecipeEditor.Location = new Point(491, 0);
             btnRecipeEditor.Name = "btnRecipeEditor";
             btnRecipeEditor.Size = new Size(103, 44);
             btnRecipeEditor.TabIndex = 1;
@@ -88,7 +91,7 @@ namespace FourAssembly.MultiStation
             btnCounters.Dock = DockStyle.Right;
             btnCounters.Font = new Font("Segoe UI", 12F);
             btnCounters.ForeColor = Color.White;
-            btnCounters.Location = new Point(722, 0);
+            btnCounters.Location = new Point(594, 0);
             btnCounters.Name = "btnCounters";
             btnCounters.Size = new Size(130, 44);
             btnCounters.TabIndex = 5;
@@ -130,13 +133,27 @@ namespace FourAssembly.MultiStation
             btnCognex.Dock = DockStyle.Right;
             btnCognex.Font = new Font("Segoe UI", 12F);
             btnCognex.ForeColor = Color.White;
-            btnCognex.Location = new Point(852, 0);
+            btnCognex.Location = new Point(724, 0);
             btnCognex.Name = "btnCognex";
             btnCognex.Size = new Size(148, 44);
             btnCognex.TabIndex = 2;
             btnCognex.Text = "Cognex Debug";
             btnCognex.UseVisualStyleBackColor = false;
             btnCognex.Click += btnCognex_Click;
+            // 
+            // btnPresence
+            // 
+            btnPresence.BackColor = Color.FromArgb(20, 55, 100);
+            btnPresence.Dock = DockStyle.Right;
+            btnPresence.Font = new Font("Segoe UI", 12F);
+            btnPresence.ForeColor = Color.White;
+            btnPresence.Location = new Point(872, 0);
+            btnPresence.Name = "btnPresence";
+            btnPresence.Size = new Size(128, 44);
+            btnPresence.TabIndex = 8;
+            btnPresence.Text = "Presencias";
+            btnPresence.UseVisualStyleBackColor = false;
+            btnPresence.Click += btnPresence_Click;
             // 
             // btnPlc
             // 

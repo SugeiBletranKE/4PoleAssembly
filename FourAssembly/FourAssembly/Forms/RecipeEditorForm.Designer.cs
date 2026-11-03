@@ -47,6 +47,7 @@ partial class RecipeEditorForm
         radBG3 = new RadioButton();
         radBG2 = new RadioButton();
         radBG1 = new RadioButton();
+        _chkSharedMode = new CheckBox();
         lblBGs = new Label();
         txtDescription = new TextBox();
         lblDescription = new Label();
@@ -129,6 +130,7 @@ partial class RecipeEditorForm
         scrollPanel.Controls.Add(radBG3);
         scrollPanel.Controls.Add(radBG2);
         scrollPanel.Controls.Add(radBG1);
+        scrollPanel.Controls.Add(_chkSharedMode);
         scrollPanel.Controls.Add(lblBGs);
         scrollPanel.Controls.Add(txtDescription);
         scrollPanel.Controls.Add(lblDescription);
@@ -225,7 +227,7 @@ partial class RecipeEditorForm
         label2.Name = "label2";
         label2.Size = new Size(164, 20);
         label2.TabIndex = 21;
-        label2.Text = "Liberación de material";
+        label2.Text = "LiberaciÃ³n de material";
         // 
         // btnReset
         // 
@@ -424,6 +426,17 @@ partial class RecipeEditorForm
         radBG1.UseVisualStyleBackColor = true;
         radBG1.CheckedChanged += RadBG_CheckedChanged;
         // 
+        // _chkSharedMode
+        // 
+        _chkSharedMode.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
+        _chkSharedMode.Location = new Point(342, 100);
+        _chkSharedMode.Name = "_chkSharedMode";
+        _chkSharedMode.Size = new Size(182, 24);
+        _chkSharedMode.TabIndex = 28;
+        _chkSharedMode.Text = "Metodo compartido \r\n";
+        _chkSharedMode.UseVisualStyleBackColor = true;
+        _chkSharedMode.CheckedChanged += SharedMode_CheckedChanged;
+        // 
         // lblBGs
         // 
         lblBGs.AutoSize = true;
@@ -507,6 +520,7 @@ partial class RecipeEditorForm
     private RadioButton radBG2 = null!;
     private RadioButton radBG3 = null!;
     private RadioButton radBG4 = null!;
+    private CheckBox _chkSharedMode = null!;
 
     internal Panel pnlBGInputs = null!;
 

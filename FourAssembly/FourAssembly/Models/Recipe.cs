@@ -5,6 +5,8 @@ public class Recipe
     public string PartNumber { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public int CableCount { get; set; }
+    public bool SharedMode { get; set; }
+    public string SharedBG { get; set; } = string.Empty;
     public string ConnectorGender { get; set; } = "A";
     public Dictionary<string, StationConfig> Stations { get; set; } = [];
     public List<Tool> Tools { get; set; } = [];

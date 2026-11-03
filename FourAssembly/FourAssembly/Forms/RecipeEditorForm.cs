@@ -17,6 +17,7 @@ public partial class RecipeEditorForm : Form
     private readonly Dictionary<(int Station, int Pin), CheckBox> _bgPinCheckBoxes = [];
     private readonly TextBox _txtHousing = new();
     private int _selectedBGCount = 0;
+    private bool _loadingRecipe;
 
     public RecipeEditorForm()
     {
@@ -54,9 +55,11 @@ public partial class RecipeEditorForm : Form
 
     private void LoadRecipeIntoForm(Recipe? r)
     {
+        _loadingRecipe = true;
         _editing = r;
         txtPartNumber.Text = r?.PartNumber ?? string.Empty;
         txtPartNumber.ReadOnly = r is not null;
+        _chkSharedMode.Checked = r?.SharedMode == true;
 
         SetConnectorGenderSelection(r?.ConnectorGender ?? "A");
 
@@ -80,6 +83,15 @@ public partial class RecipeEditorForm : Form
         RefreshBGInputs();
         RefreshHousingInputs();
         RefreshBgPinInputs();
+        _loadingRecipe = false;
+    }
+
+    private void SharedMode_CheckedChanged(object? sender, EventArgs e)
+    {
+        if (_loadingRecipe)
+            return;
+
+        RefreshBGInputs();
     }
 
     private void RadBG_CheckedChanged(object? sender, EventArgs e)
@@ -101,18 +113,35 @@ public partial class RecipeEditorForm : Form
         _bgTextboxes.Clear();
 
         int xPos = 0;
-        var stationNumbers = GetStationNumbersForBGCount(_selectedBGCount);
-        for (int i = 0; i < stationNumbers.Length; i++)
+        var stationNumbers = GetRecipeStationNumbers();
+        var bgInputCount = _chkSharedMode.Checked && stationNumbers.Length > 0
+            ? 1
+            : stationNumbers.Length;
+
+        for (int i = 0; i < bgInputCount; i++)
         {
-            var lbl = new Label { Text = $"BG {i + 1}:", Location = new Point(xPos, 5), AutoSize = true };
+            var lbl = new Label
+            {
+                Text = _chkSharedMode.Checked ? "BG compartido:" : $"BG {i + 1}:",
+                Location = new Point(xPos, 5),
+                AutoSize = true
+            };
             pnlBGInputs.Controls.Add(lbl);
 
-            var txt = new TextBox { Location = new Point(xPos + 50, 2), Size = new Size(100, 24) };
+            var textOffset = _chkSharedMode.Checked ? 115 : 50;
+            var txt = new TextBox { Location = new Point(xPos + textOffset, 2), Size = new Size(150, 24) };
             if (_editing is not null)
             {
-                var key = stationNumbers[i].ToString();
-                if (_editing.Stations.ContainsKey(key))
-                    txt.Text = _editing.Stations[key].BG;
+                if (_chkSharedMode.Checked)
+                {
+                    txt.Text = GetSharedBgFromRecipe(_editing);
+                }
+                else
+                {
+                    var key = stationNumbers[i].ToString();
+                    if (_editing.Stations.ContainsKey(key))
+                        txt.Text = _editing.Stations[key].BG;
+                }
             }
             pnlBGInputs.Controls.Add(txt);
             _bgTextboxes.Add(txt);
@@ -211,14 +240,19 @@ public partial class RecipeEditorForm : Form
         _bgPinsPanel.Controls.Clear();
         _bgPinCheckBoxes.Clear();
 
-        var stationNumbers = GetStationNumbersForBGCount(_selectedBGCount);
+        var stationNumbers = GetRecipeStationNumbers();
         _bgPinsPanel.Visible = stationNumbers.Length > 0;
         if (stationNumbers.Length == 0)
             return;
 
+        var sharedPins = _chkSharedMode.Checked;
+        var pinRows = sharedPins ? new[] { 0 } : stationNumbers;
+
         _bgPinsPanel.Controls.Add(new Label
         {
-            Text = "BG pins por estacion (1 = habilitado, 0 = deshabilitado)",
+            Text = sharedPins
+                ? "BG pins compartidos (se aplican igual a las 3 estaciones)"
+                : "BG pins por estacion (1 = habilitado, 0 = deshabilitado)",
             Location = new Point(0, 0),
             AutoSize = true,
             Font = new Font("Segoe UI", 11F, FontStyle.Bold)
@@ -236,20 +270,22 @@ public partial class RecipeEditorForm : Form
 
         }
 
-        for (var row = 0; row < stationNumbers.Length; row++)
+        for (var row = 0; row < pinRows.Length; row++)
         {
-            var stationNumber = stationNumbers[row];
+            var stationNumber = pinRows[row];
             var y = 58 + (row * 30);
             _bgPinsPanel.Controls.Add(new Label
             {
-                Text = $"Station {stationNumber}",
+                Text = sharedPins ? "Compartido" : $"Station {stationNumber}",
                 Location = new Point(0, y + 2),
                 Size = new Size(100, 22)
             });
 
-            var savedPins = _editing?.Stations.TryGetValue(stationNumber.ToString(), out var station) == true
-                ? station.BgPins
-                : null;
+            var savedPins = sharedPins
+                ? GetSavedSharedBgPins()
+                : _editing?.Stations.TryGetValue(stationNumber.ToString(), out var station) == true
+                    ? station.BgPins
+                    : null;
 
             for (var pinNumber = 1; pinNumber <= 4; pinNumber++)
             {
@@ -268,12 +304,28 @@ public partial class RecipeEditorForm : Form
             }
         }
 
-        _bgPinsPanel.Height = 62 + (stationNumbers.Length * 30);
+        _bgPinsPanel.Height = 62 + (pinRows.Length * 30);
+    }
+
+    private List<int>? GetSavedSharedBgPins()
+    {
+        if (_editing?.Stations is null)
+            return null;
+
+        // Compatibilidad con recetas compartidas anteriores: toma primero el
+        // patron configurado que tenga al menos un pin activo.
+        return _editing.Stations
+            .OrderBy(entry => int.TryParse(entry.Key, out var number) ? number : int.MaxValue)
+            .Select(entry => entry.Value.BgPins)
+            .FirstOrDefault(pins => pins is { Count: >= 4 } && pins.Take(4).Any(value => value == 1))
+            ?? _editing.Stations.Values
+                .Select(station => station.BgPins)
+                .FirstOrDefault(pins => pins is { Count: >= 4 });
     }
 
     private void RefreshHousingInputs()
     {
-        var stationNumbers = GetStationNumbersForBGCount(_selectedBGCount);
+        var stationNumbers = GetRecipeStationNumbers();
         if (stationNumbers.Length == 0)
         {
             _housingPanel.Visible = false;
@@ -329,7 +381,7 @@ public partial class RecipeEditorForm : Form
         _stationToolsPanel.Controls.Clear();
         _stationToolBarcodeTextboxes.Clear();
 
-        var stationNumbers = GetStationNumbersForBGCount(_selectedBGCount);
+        var stationNumbers = GetRecipeStationNumbers();
         for (int i = 0; i < stationNumbers.Length; i++)
         {
             var stationNum = stationNumbers[i];
@@ -365,7 +417,7 @@ public partial class RecipeEditorForm : Form
     private List<Tool> GetToolsByStationFromInputs()
     {
         var tools = new List<Tool>();
-        foreach (var stationNum in GetStationNumbersForBGCount(_selectedBGCount))
+        foreach (var stationNum in GetRecipeStationNumbers())
         {
             var barcode = _stationToolBarcodeTextboxes.TryGetValue(stationNum, out var barcodeTextBox)
                 ? barcodeTextBox.Text.Trim()
@@ -449,7 +501,14 @@ public partial class RecipeEditorForm : Form
             return;
         }
 
-        if (GetStationNumbersForBGCount(_selectedBGCount).Length > 0
+        if (_chkSharedMode.Checked
+            && (_bgTextboxes.Count == 0 || string.IsNullOrWhiteSpace(_bgTextboxes[0].Text)))
+        {
+            MessageBox.Show("Shared BG is required.");
+            return;
+        }
+
+        if (GetRecipeStationNumbers().Length > 0
             && string.IsNullOrWhiteSpace(_txtHousing.Text))
         {
             MessageBox.Show("Housing is required.");
@@ -461,12 +520,21 @@ public partial class RecipeEditorForm : Form
             PartNumber = pn,
             Description = string.Empty,
             CableCount = _selectedBGCount,
+            SharedMode = _chkSharedMode.Checked,
+            SharedBG = _chkSharedMode.Checked && _bgTextboxes.Count > 0
+                ? _bgTextboxes[0].Text.Trim()
+                : string.Empty,
             // Cambio solicitado: la estacion del conector/material se calcula segun cantidad de BGs.
             ConnectorGender = GetSelectedConnectorGender(),
             Tools = GetToolsByStationFromInputs()
         };
 
-        int[] stationNumbers = GetStationNumbersForBGCount(_selectedBGCount);
+        int[] stationNumbers = GetRecipeStationNumbers();
+        var sharedBgPins = _chkSharedMode.Checked
+            ? Enumerable.Range(1, 4)
+                .Select(pin => _bgPinCheckBoxes.TryGetValue((0, pin), out var checkBox) && checkBox.Checked ? 1 : 0)
+                .ToList()
+            : null;
 
         for (int i = 0; i < stationNumbers.Length; i++)
         {
@@ -476,15 +544,24 @@ public partial class RecipeEditorForm : Form
                 ? existingConfig
                 : new StationConfig();
 
-            if (!string.IsNullOrEmpty(_bgTextboxes[i].Text))
-                stationConfig.BG = _bgTextboxes[i].Text.Trim();
+            var bgTextBoxIndex = _chkSharedMode.Checked ? 0 : i;
+            if (bgTextBoxIndex < _bgTextboxes.Count
+                && !string.IsNullOrWhiteSpace(_bgTextboxes[bgTextBoxIndex].Text))
+            {
+                stationConfig.BG = _bgTextboxes[bgTextBoxIndex].Text.Trim();
+            }
 
             stationConfig.Enable = "TRUE";
-            stationConfig.HousingEnable = i == 0 ? "TRUE" : "FALSE";
-            stationConfig.Housing = i == 0 ? _txtHousing.Text.Trim() : string.Empty;
-            stationConfig.BgPins = Enumerable.Range(1, 4)
-                .Select(pin => _bgPinCheckBoxes.TryGetValue((stationNum, pin), out var checkBox) && checkBox.Checked ? 1 : 0)
-                .ToList();
+            var housingEnabledForStation = _chkSharedMode.Checked || i == 0;
+            stationConfig.HousingEnable = housingEnabledForStation ? "TRUE" : "FALSE";
+            stationConfig.Housing = housingEnabledForStation
+                ? _txtHousing.Text.Trim()
+                : string.Empty;
+            stationConfig.BgPins = sharedBgPins is not null
+                ? new List<int>(sharedBgPins)
+                : Enumerable.Range(1, 4)
+                    .Select(pin => _bgPinCheckBoxes.TryGetValue((stationNum, pin), out var checkBox) && checkBox.Checked ? 1 : 0)
+                    .ToList();
             recipe.Stations[stationKey] = stationConfig;
         }
 
@@ -522,6 +599,26 @@ public partial class RecipeEditorForm : Form
         4 => [1, 2, 3],
         _ => []
     };
+
+    private int[] GetRecipeStationNumbers()
+    {
+        return _chkSharedMode.Checked && _selectedBGCount > 0
+            ? [1, 2, 3]
+            : GetStationNumbersForBGCount(_selectedBGCount);
+    }
+
+    private static string GetSharedBgFromRecipe(Recipe recipe)
+    {
+        if (!string.IsNullOrWhiteSpace(recipe.SharedBG))
+            return recipe.SharedBG.Trim();
+
+        return recipe.Stations
+            .Where(station => station.Value.Enable == "TRUE")
+            .OrderBy(station => int.TryParse(station.Key, out var number) ? number : int.MaxValue)
+            .Select(station => station.Value.BG?.Trim() ?? string.Empty)
+            .FirstOrDefault(bg => !string.IsNullOrWhiteSpace(bg))
+            ?? string.Empty;
+    }
 
     private static string GetMaterialStationCodeForBGCount(int bgCount)
     {

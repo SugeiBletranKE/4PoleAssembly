@@ -13,7 +13,8 @@
       "Bash(timeout 10 dotnet run --no-build)",
       "PowerShell(Stop-Process *)",
       "Bash(rm -f \"C:/ke/FourPole/app.log\")",
-      "Bash(dotnet run *)"
+      "Bash(dotnet run *)",
+      "Bash(xargs grep -l \"PlcCavity\\\\|80\\\\|81\\\\|82\")"
     ]
   }
 }

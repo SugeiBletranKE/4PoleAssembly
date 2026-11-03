@@ -382,6 +382,12 @@ public partial class FrmMain : Form
         ShowPlcDebug();
     }
 
+    private void btnPresence_Click(object sender, EventArgs e)
+    {
+        var presenceForm = new CavityPresenceForm(_plc, _settings);
+        presenceForm.Show(this);
+    }
+
     private void ShowCognexDebug()
     {
         var cognexForm = new CognexDiagnosticsForm();

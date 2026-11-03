@@ -45,6 +45,7 @@ public partial class StationPanel : UserControl
     private int? _completedBookingState = null;
     private bool _bookingInProgress = false;
     private bool _plcCounterSent = false;
+    private bool _sharedPistonTransitionInProgress = false;
     private DateTime _cognexReadBlockedUntil = DateTime.MinValue;
     private bool _lastOperatorButtonSignal = false;
     private bool? _lastMaterialBoxPresentSignal = null;
@@ -180,8 +181,16 @@ public partial class StationPanel : UserControl
         if (_config.PlcCavityErrorMemory <= 0 || _config.PlcCavityErrorRegister <= 0)
             return;
 
+
         var errorActive = await Task.Run(() => _plc.ReadCoil(_config.PlcCavityErrorMemory));
-        if (!_plc.IsConnected || !errorActive || _cognexAdminLocked || _adminUnlockDialogOpen)
+        if (!_plc.IsConnected || !errorActive)
+            return;
+
+        // Una señal activada durante Presencias pertenece a una prueba de
+        // mantenimiento. Se ignora después de cerrar el formulario hasta que el
+        // PLC la regrese a cero; entonces la protección normal queda rearmada.
+
+        if (_cognexAdminLocked || _adminUnlockDialogOpen)
             return;
 
         var detailValue = await Task.Run(() => _plc.ReadHoldingRegister(_config.PlcCavityErrorRegister));
@@ -267,8 +276,15 @@ public partial class StationPanel : UserControl
         if (!_completedBookingState.HasValue && !await BookPendingSerialAsync(0))
             return;
 
-        if (!await ResetCableInsertionOutputsAsync())
+        if (IsSharedRecipeActive())
+        {
+            if (!await CompleteSharedInsertionOutputsAsync())
+                return;
+        }
+        else if (!await ResetCableInsertionOutputsAsync())
+        {
             return;
+        }
 
         RestartStationAfterCounterComplete();
         await SetYellowButtonAsync(active: true, "N=N");
@@ -289,7 +305,17 @@ public partial class StationPanel : UserControl
         if (!_plc.IsConnected)
             return;
 
+        var previousInsertedCount = _insertedCount;
+        var insertedCountChanged = insertedCount != previousInsertedCount;
         UpdateInsertedCountLabel(insertedCount);
+
+        if (insertedCountChanged && IsSharedRecipeActive())
+        {
+            if (insertedCount > previousInsertedCount && _plcCounterSent)
+                await HandleSharedInsertionDetectedAsync(insertedCount);
+
+            UpdateUI();
+        }
     }
 
     private void RestartStationAfterCounterComplete()
@@ -311,6 +337,7 @@ public partial class StationPanel : UserControl
         _materialSensorRecheckInProgress = false;
         _waitingForMaterialBoxInsertion = false;
         _plcCounterSent = false;
+        _sharedPistonTransitionInProgress = false;
         _cognexReadBlockedUntil = DateTime.MinValue;
         _lstCables.Items.Clear();
         UpdateTotalScrapCountLabel();
@@ -726,7 +753,7 @@ public partial class StationPanel : UserControl
 
     private bool IsHousingEnabled()
     {
-        return IsFirstEnabledStation()
+        return (IsSharedRecipeActive() || IsFirstEnabledStation())
             && !string.IsNullOrWhiteSpace(GetExpectedHousingBarcode());
     }
 
@@ -858,7 +885,7 @@ public partial class StationPanel : UserControl
 
     private bool IsMaterialStation()
     {
-        return IsFirstEnabledStation();
+        return IsSharedRecipeActive() || IsFirstEnabledStation();
     }
 
     private async void CompleteZebraValidation()
@@ -936,6 +963,15 @@ public partial class StationPanel : UserControl
             return;
         }
 
+        if (IsSharedRecipeActive() && _plcCounterSent && _insertedCount < _scannedCables.Count)
+        {
+            var expectedCavities = GetSharedRecipeExpectedCavityCount();
+            var cavityNumber = _scannedCables.Count;
+            ShowInstruction($"Ensamblar pieza al conector {cavityNumber}/{expectedCavities}.", Color.DarkOrange);
+            LogService.Log($"[Station {_stationCode}] Cognex data ignored until cavity {cavityNumber}/{expectedCavities} is assembled. Inserted={_insertedCount}");
+            return;
+        }
+
         // Cambio solicitado: Cognex solo debe aceptar seriales completos de 24 caracteres.
         if (data.Length != CognexSerialLength)
         {
@@ -957,6 +993,14 @@ public partial class StationPanel : UserControl
         if (_scannedCables.Contains(data, StringComparer.OrdinalIgnoreCase))
         {
             LogService.Log($"[Station {_stationCode}] Duplicate Cognex serial ignored: {data}");
+            return;
+        }
+
+        if (HasSharedRecipeReachedExpectedCavities())
+        {
+            var expectedCavities = GetSharedRecipeExpectedCavityCount();
+            ShowError($"Ya se completaron las {expectedCavities} cavidades esperadas.");
+            LogService.Log($"[Station {_stationCode}] Extra Cognex serial ignored because shared recipe already reached {expectedCavities} cavities: {data}");
             return;
         }
 
@@ -1020,15 +1064,17 @@ public partial class StationPanel : UserControl
         {
             var result = await StationInfoApiService.ReviewSerialsIndividuallyAsync(request);
             ShowApiResult(result);
-            LogService.Log($"[Station {_stationCode}] API single serial response serial={serial} success={result.Success} resultCode={result.ResultCode?.ToString() ?? "N/A"} resultText={result.ResultText}: {result.ResponseBody}");
+            if (!result.Success)
+            {
+                LogService.Log($"[Station {_stationCode}] API single serial ERROR serial={serial} " +
+                    $"resultCode={result.ResultCode?.ToString() ?? "N/A"} " +
+                    $"resultText={result.ResultText}: {result.ResponseBody}");
+            }
             LogMesPieceReview(serial, result);
 
             if (result.Success)
             {
-                _apiApproved = true;
-                ShowSuccess($"CHECK OK: {serial}. Liberando PLC...");
-                LogService.Log($"[Station {_stationCode}] MES approved Cognex serial. Starting automatic PLC release without operator button. Serial={serial}");
-                await FinalizeStationCycleAsync();
+                await HandleApprovedCognexSerialAsync(serial);
                 return;
             }
 
@@ -1058,6 +1104,222 @@ public partial class StationPanel : UserControl
             _operatorActionInProgress = false;
             UpdateUI();
         }
+    }
+
+    private async Task HandleApprovedCognexSerialAsync(string serial)
+    {
+        if (!IsSharedRecipeActive())
+        {
+            _apiApproved = true;
+            ShowSuccess($"CHECK OK: {serial}. Liberando PLC...");
+            LogService.Log($"[Station {_stationCode}] MES approved Cognex serial. Starting automatic PLC release without operator button. Serial={serial}");
+            await FinalizeStationCycleAsync();
+            return;
+        }
+
+        await HandleSharedCognexApprovalAsync(serial);
+    }
+
+    private async Task HandleSharedCognexApprovalAsync(string approvedSerial)
+    {
+        var expectedCavities = GetSharedRecipeExpectedCavityCount();
+        if (expectedCavities <= 0)
+        {
+            _apiApproved = false;
+            ShowError("La receta compartida no tiene cavidades configuradas.");
+            LogService.Log($"[Station {_stationCode}] Shared recipe has no valid cavity count");
+            return;
+        }
+
+        var approvedCavities = _scannedCables.Count;
+        LogService.Log(
+            $"[Station {_stationCode}] Shared Cognex approval: " +
+            $"approved={approvedCavities}, expected={expectedCavities}, serial={approvedSerial}");
+
+        if (approvedCavities > expectedCavities)
+        {
+            _apiApproved = false;
+            ShowError($"Se recibieron mas cables que las {expectedCavities} cavidades configuradas.");
+            return;
+        }
+
+        if (!await ReleaseSharedInsertionStepAsync(expectedCavities, approvedCavities))
+            return;
+
+        if (approvedCavities < expectedCavities)
+        {
+            _apiApproved = false;
+            ShowInstruction($"Ensamblar cable {approvedCavities}/{expectedCavities}.", Color.DarkOrange);
+            UpdateUI();
+            return;
+        }
+
+        _apiApproved = true;
+        ShowSuccess($"Cavidades completas {approvedCavities}/{expectedCavities}. Liberando estacion...");
+        await FinalizeStationCycleAsync();
+    }
+
+    private bool IsSharedRecipeActive()
+    {
+        return GetActiveRecipe()?.SharedMode == true;
+    }
+
+    private Recipe? GetActiveRecipe()
+    {
+        return _currentProcess is null
+            ? null
+            : RecipeRepository.FindByPartNumber(_currentProcess.PartNumber);
+    }
+
+    private int GetSharedRecipeExpectedCavityCount()
+    {
+        if (!IsSharedRecipeActive() || _stationConfig?.BgPins is not { Count: >= 4 } pins)
+            return 0;
+
+        return pins.Take(4).Count(value => value == 1);
+    }
+
+    private bool HasSharedRecipeReachedExpectedCavities()
+    {
+        var expectedCavities = GetSharedRecipeExpectedCavityCount();
+        return expectedCavities > 0 && _scannedCables.Count >= expectedCavities;
+    }
+
+    private bool CanFinalizeSharedRecipe()
+    {
+        if (!IsSharedRecipeActive())
+            return true;
+
+        var expectedCavities = GetSharedRecipeExpectedCavityCount();
+        if (expectedCavities > 0 && _scannedCables.Count == expectedCavities)
+            return true;
+
+        ShowError($"Faltan cavidades Cognex: {_scannedCables.Count}/{expectedCavities}.");
+        LogService.Log($"[Station {_stationCode}] Shared recipe release blocked: scanned={_scannedCables.Count}, expected={expectedCavities}");
+        return false;
+    }
+
+    private string GetCognexActiveInstruction()
+    {
+        if (!IsSharedRecipeActive())
+            return $"Escanear piezas. Activo - {_cableCount} cables.";
+
+        var expectedCavities = GetSharedRecipeExpectedCavityCount();
+        if (_plcCounterSent && _insertedCount < _scannedCables.Count)
+            return $"Ensamblar pieza al conector {_scannedCables.Count}/{expectedCavities}.";
+
+        var nextCavity = Math.Min(_scannedCables.Count + 1, expectedCavities);
+        return $"Escanear pieza {nextCavity}/{expectedCavities}.";
+    }
+
+    private async Task<bool> ReleaseSharedRecipeToPLCAsync(int expectedCavities)
+    {
+        ShowInstruction("Preparando PLC para ensamble compartido...", Color.DarkOrange);
+
+        var connectorCode = GetConnectorPlcCode();
+        if (!await WriteActiveStationAndConnectorSideAsync(connectorCode))
+            return false;
+
+        var registerOk = await Task.Run(() =>
+            _plc.WriteHoldingRegister(_config.PlcCounter, expectedCavities));
+        if (!registerOk)
+        {
+            ShowError("PLC no conectado. No se pudo escribir el total de cavidades.");
+            return false;
+        }
+
+        if (!await WritePlcMemoryAsync(_config.PlcQuantityProcessMemory, true, "proceso compartido con cantidad"))
+            return false;
+
+        if (!await WritePlcMemoryAsync(_config.PlcFinalProcessMemory, false, "abrir piston para ensamble compartido"))
+            return false;
+
+        _plcCounterSent = true;
+        LogService.Log($"[Station {_stationCode}] Shared PLC insertion released for {expectedCavities} cavities");
+        return true;
+    }
+
+    private async Task<bool> ReleaseSharedInsertionStepAsync(int expectedCavities, int cableNumber)
+    {
+        if (!_plcCounterSent)
+            return await ReleaseSharedRecipeToPLCAsync(expectedCavities);
+
+        if (!await WritePlcMemoryAsync(
+                _config.PlcFinalProcessMemory,
+                false,
+                $"abrir piston para cable compartido {cableNumber}/{expectedCavities}"))
+        {
+            return false;
+        }
+
+        LogService.Log(
+            $"[Station {_stationCode}] Shared insertion step released. " +
+            $"Cable={cableNumber}/{expectedCavities}, Inserted={_insertedCount}");
+        return true;
+    }
+
+    private async Task HandleSharedInsertionDetectedAsync(int insertedCount)
+    {
+        if (_sharedPistonTransitionInProgress)
+            return;
+
+        var expectedCavities = GetSharedRecipeExpectedCavityCount();
+        if (expectedCavities <= 0 || insertedCount > expectedCavities)
+            return;
+
+        _sharedPistonTransitionInProgress = true;
+        try
+        {
+            if (insertedCount < expectedCavities)
+            {
+                if (!await WritePlcMemoryAsync(
+                        _config.PlcFinalProcessMemory,
+                        true,
+                        $"cerrar piston despues de cable compartido {insertedCount}/{expectedCavities}"))
+                {
+                    return;
+                }
+
+                ShowInstruction($"Escanear pieza {insertedCount + 1}/{expectedCavities}.", Color.Green);
+                LogService.Log(
+                    $"[Station {_stationCode}] Shared insertion detected and piston closed. " +
+                    $"Inserted={insertedCount}/{expectedCavities}");
+                return;
+            }
+
+            // La ultima insercion termina con el piston abierto para retirar la pieza.
+            await WritePlcMemoryAsync(
+                _config.PlcFinalProcessMemory,
+                false,
+                $"mantener piston abierto al completar compartido {insertedCount}/{expectedCavities}");
+            ShowInstruction($"Proceso completo {insertedCount}/{expectedCavities}. Retirar pieza.", Color.Green);
+        }
+        finally
+        {
+            _sharedPistonTransitionInProgress = false;
+        }
+    }
+
+    private async Task<bool> CompleteSharedInsertionOutputsAsync()
+    {
+        if (!await WritePlcMemoryAsync(
+                _config.PlcQuantityProcessMemory,
+                false,
+                "finalizar proceso compartido con cantidad"))
+        {
+            return false;
+        }
+
+        if (!await WritePlcMemoryAsync(
+                _config.PlcFinalProcessMemory,
+                false,
+                "dejar piston abierto para retirar pieza compartida"))
+        {
+            return false;
+        }
+
+        LogService.Log($"[Station {_stationCode}] Shared process completed with piston open");
+        return true;
     }
 
     private void LogMesPieceReview(string serial, StationInfoApiResult result)
@@ -1109,10 +1371,13 @@ public partial class StationPanel : UserControl
                 state);
 
             ShowApiResult(result);
-            LogService.Log(
-                $"[Station {_stationCode}] BOOK response serial={serial}, state={state}, " +
-                $"success={result.Success}, resultCode={result.ResultCode?.ToString() ?? "N/A"}, " +
-                $"resultText={result.ResultText}: {result.ResponseBody}");
+            if (!result.Success)
+            {
+                LogService.Log(
+                    $"[Station {_stationCode}] BOOK ERROR serial={serial}, state={state}, " +
+                    $"resultCode={result.ResultCode?.ToString() ?? "N/A"}, " +
+                    $"resultText={result.ResultText}: {result.ResponseBody}");
+            }
 
             if (!result.Success)
             {
@@ -1155,6 +1420,9 @@ public partial class StationPanel : UserControl
 
     private async Task FinalizeStationCycleAsync()
     {
+        if (!CanFinalizeSharedRecipe())
+            return;
+
         if (_processState != StationProcessState.COGNEX_ACTIVE && _processState != StationProcessState.COGNEX_DONE)
         {
             ShowError("Debe completar Cognex primero");
@@ -1230,6 +1498,15 @@ public partial class StationPanel : UserControl
 
     private async Task ReleaseToPLCAsync()
     {
+        // En modo compartido el PLC se libera desde la primera pieza aprobada para
+        // permitir la secuencia escanear -> ensamblar en cada cavidad.
+        if (IsSharedRecipeActive() && _plcCounterSent)
+        {
+            ShowInstruction(GetCableInsertionInstruction(), Color.DarkOrange);
+            UpdateUI();
+            return;
+        }
+
         ShowInstruction("Enviando datos al PLC...", Color.DarkOrange);
 
         var connectorCode = GetConnectorPlcCode();
@@ -1278,9 +1555,12 @@ public partial class StationPanel : UserControl
 
     private string GetConnectorPlcCode()
     {
-        return string.Equals((_currentProcess?.ConnectorGender ?? string.Empty).Trim(), "B", StringComparison.OrdinalIgnoreCase)
-            ? "B"
-            : "A";
+        var connectorGender = (_currentProcess?.ConnectorGender ?? string.Empty).Trim();
+        return string.Equals(connectorGender, "B", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(connectorGender, "Male", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(connectorGender, _config.PlcMale, StringComparison.OrdinalIgnoreCase)
+                ? "B"
+                : "A";
     }
 
     private async Task<bool> WriteActiveStationAndConnectorSideAsync(string connectorCode)
@@ -1352,6 +1632,9 @@ public partial class StationPanel : UserControl
 
             await Task.Delay(100);
         }
+
+        await Task.Delay(800);
+        LogService.Log($"[Station {_stationCode}] BG pin configuration complete, PLC ready for cavity validation");
 
         return true;
     }
@@ -1453,7 +1736,7 @@ public partial class StationPanel : UserControl
                 }
                 else
                 {
-                    lblInfo.Text = $"Escanear piezas. Activo - {_cableCount} cables.";
+                    lblInfo.Text = GetCognexActiveInstruction();
                     lblInfo.ForeColor = Color.Green;
                 }
                 break;
@@ -1528,6 +1811,13 @@ public partial class StationPanel : UserControl
 
     private string GetCableInsertionInstruction()
     {
+        if (IsSharedRecipeActive())
+        {
+            var expectedCavities = GetSharedRecipeExpectedCavityCount();
+            var cavityNumber = Math.Min(_scannedCables.Count, expectedCavities);
+            return $"Ensamblar pieza al conector {cavityNumber}/{expectedCavities}.";
+        }
+
         return "Insertar cable en el conector.";
     }
 
@@ -1758,16 +2048,19 @@ public partial class StationPanel : UserControl
         };
         var requestJson = JsonSerializer.Serialize(request, _apiInfoJsonOptions);
         ShowApiInfo(string.Empty);
-        LogService.Log($"[Station {_stationCode}] API request: {requestJson}");
-
-
         _operatorActionInProgress = true;
 
         try
         {
             var result = await StationInfoApiService.ReviewSerialsIndividuallyAsync(request);
             ShowApiResult(result);
-            LogService.Log($"[Station {_stationCode}] API response status={result.StatusCode?.ToString() ?? "N/A"} success={result.Success} resultCode={result.ResultCode?.ToString() ?? "N/A"} resultText={result.ResultText}: {result.ResponseBody}");
+            if (!result.Success)
+            {
+                LogService.Log($"[Station {_stationCode}] API batch ERROR request={requestJson} " +
+                    $"status={result.StatusCode?.ToString() ?? "N/A"} " +
+                    $"resultCode={result.ResultCode?.ToString() ?? "N/A"} " +
+                    $"resultText={result.ResultText}: {result.ResponseBody}");
+            }
 
             if (result.Success)
             {
@@ -1896,6 +2189,7 @@ public partial class StationPanel : UserControl
         return _currentProcess != null
             && _stationConfig != null
             && _cableCount > 0
+            && (!IsSharedRecipeActive() || HasSharedRecipeReachedExpectedCavities())
             && _processState == StationProcessState.COGNEX_ACTIVE
             && !_apiApproved;
     }
@@ -2486,7 +2780,10 @@ public partial class StationPanel : UserControl
 
     private void UpdateInsertedCountLabelText()
     {
-        _lblInsertedCount.Text = $"Insertadas {_insertedCount}/{_cableCount}";
+        var expected = IsSharedRecipeActive()
+            ? GetSharedRecipeExpectedCavityCount()
+            : _cableCount;
+        _lblInsertedCount.Text = $"Insertadas {_insertedCount}/{expected}";
     }
 
     private ListViewItem CreateCableListItem(string serial)

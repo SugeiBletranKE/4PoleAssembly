@@ -18,6 +18,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Update="Forms\CavityPresenceForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Update="Forms\CavityPresenceForm.Designer.cs">
+      <DependentUpon>CavityPresenceForm.cs</DependentUpon>
+    </Compile>
     <Compile Update="Forms\StationCountersForm.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -35,12 +41,6 @@
     </Compile>
     <Compile Update="Forms\StationErrorAlertForm.Designer.cs">
       <DependentUpon>StationErrorAlertForm.cs</DependentUpon>
-    </Compile>
-    <Compile Update="Forms\AdminUnlockForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Update="Forms\AdminUnlockForm.Designer.cs">
-      <DependentUpon>AdminUnlockForm.cs</DependentUpon>
     </Compile>
     <Compile Update="Properties\Resources.Designer.cs">
       <DesignTime>True</DesignTime>
